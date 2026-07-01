@@ -239,13 +239,15 @@ fn vertical_line(height: u16) -> Vec<Line<'static>> {
 
 fn render_help(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
-    let area = centered_rect(frame.area(), 50, 15);
+    let area = centered_rect(frame.area(), 50, 17);
     let text = [
         app.t(Key::DashboardHelpFocusTab),
         app.t(Key::DashboardHelpFocusNp),
         app.t(Key::DashboardHelpMoveFocus),
         app.t(Key::DashboardHelpResize),
         app.t(Key::DashboardHelpChangePane),
+        app.t(Key::DashboardHelpSettings),
+        app.t(Key::DashboardHelpEditWatchlist),
         app.t(Key::DashboardHelpSplit),
         app.t(Key::DashboardHelpAddPanel),
         app.t(Key::DashboardHelpSearch),

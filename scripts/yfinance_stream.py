@@ -1,11 +1,13 @@
 import json
+import sys
 import threading
 import time
 
 import yfinance as yf
 
 
-SYMBOLS = ["AMZN", "AAPL", "META", "MSFT", "NVDA"]
+DEFAULT_SYMBOLS = ["AMZN", "AAPL", "META", "MSFT", "NVDA"]
+SYMBOLS = [symbol.upper() for symbol in sys.argv[1:] if symbol.strip()] or DEFAULT_SYMBOLS
 HEARTBEAT_SECONDS = 1.0
 
 quotes = {}

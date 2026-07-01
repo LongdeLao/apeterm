@@ -4,6 +4,8 @@ use std::{
     thread,
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     config::AppConfig,
     i18n::{I18n, Key, Locale},
@@ -21,6 +23,7 @@ pub enum Page {
     Dashboard,
     Search,
     Details,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,8 +33,10 @@ pub enum OnboardingStep {
     Theme,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
 pub enum ThemeName {
+    #[default]
     Dark,
     Light,
     Transparent,
@@ -88,6 +93,52 @@ pub enum SearchAssetKind {
     Etfs,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsItem {
+    Language,
+    Theme,
+    Onboarding,
+    Reset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchlistKind {
+    Stock,
+    Crypto,
+}
+
+#[derive(Debug, Clone)]
+pub enum WatchlistEditMode {
+    Add {
+        kind: WatchlistKind,
+        input: String,
+    },
+    Rename {
+        kind: WatchlistKind,
+        index: usize,
+        input: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchlistEditRow {
+    AddStock,
+    Stock(usize),
+    AddCrypto,
+    Crypto(usize),
+}
+
+#[derive(Debug, Clone)]
+pub struct WatchlistEditor {
+    pub selection: usize,
+    pub mode: Option<WatchlistEditMode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TextInput {
+    pub input: String,
+}
+
 #[derive(Debug)]
 pub struct App {
     pub should_quit: bool,
@@ -107,7 +158,7 @@ pub struct App {
     pub window_picker_index: usize,
     pub crypto_quotes: Vec<Quote>,
     pub stock_quotes: Vec<Quote>,
-    pub stock_market_session: MarketSession,
+    pub stock_market_session: Option<MarketSession>,
     pub ticker_db_path: PathBuf,
     pub search_query: String,
     pub search_results: Vec<SearchResult>,
@@ -120,6 +171,9 @@ pub struct App {
     pub live_details_loading: bool,
     live_details_receiver: Option<Receiver<Option<LiveInstrumentDetails>>>,
     pub search_message: Option<String>,
+    pub settings_selection: usize,
+    pub reset_confirmation: Option<TextInput>,
+    pub watchlist_editor: Option<WatchlistEditor>,
     config: AppConfig,
 }
 
@@ -133,15 +187,20 @@ pub struct DashboardLayout {
 impl App {
     pub fn new(config: AppConfig) -> Self {
         let locale = config.locale.clone();
+        let onboarding_complete = config.onboarding.completed;
         Self {
             should_quit: false,
-            page: Page::Onboarding,
+            page: if onboarding_complete {
+                Page::Dashboard
+            } else {
+                Page::Onboarding
+            },
             onboarding_step: OnboardingStep::Welcome,
-            onboarding_complete: false,
+            onboarding_complete,
             logged_in: false,
             locale: locale.clone(),
             i18n: I18n::new(locale),
-            theme_name: ThemeName::Dark,
+            theme_name: config.theme,
             dashboard_layout: DashboardLayout::default(),
             focused_panel: PanelId::News,
             closed_panels: Vec::new(),
@@ -151,7 +210,7 @@ impl App {
             window_picker_index: 0,
             crypto_quotes: Vec::new(),
             stock_quotes: Vec::new(),
-            stock_market_session: MarketSession::AfterHours,
+            stock_market_session: None,
             ticker_db_path: config.ticker_db_path.clone(),
             search_query: String::new(),
             search_results: Vec::new(),
@@ -164,6 +223,9 @@ impl App {
             live_details_loading: false,
             live_details_receiver: None,
             search_message: None,
+            settings_selection: 0,
+            reset_confirmation: None,
+            watchlist_editor: None,
             config,
         }
     }
@@ -179,6 +241,8 @@ impl App {
             OnboardingStep::Theme => {
                 self.page = Page::Dashboard;
                 self.onboarding_complete = true;
+                self.config.onboarding.completed = true;
+                let _ = self.config.save();
                 OnboardingStep::Theme
             }
         };
@@ -208,7 +272,7 @@ impl App {
                 };
                 self.set_locale(locales[next].clone());
             }
-            OnboardingStep::Theme => self.theme_name = self.theme_name.move_to(direction),
+            OnboardingStep::Theme => self.set_theme(self.theme_name.move_to(direction)),
         }
     }
 
@@ -291,6 +355,14 @@ impl App {
             self.live_details_receiver = None;
         } else if self.page == Page::Search {
             self.page = Page::Dashboard;
+        } else if self.page == Page::Settings {
+            if self.reset_confirmation.is_some() {
+                self.reset_confirmation = None;
+            } else {
+                self.page = Page::Dashboard;
+            }
+        } else if self.is_editing_watchlist() {
+            self.close_watchlist_editor();
         }
     }
 
@@ -429,6 +501,13 @@ impl App {
         self.show_help = false;
         self.pending_split = false;
         self.refresh_search();
+    }
+
+    pub fn open_settings(&mut self) {
+        self.page = Page::Settings;
+        self.show_help = false;
+        self.pending_split = false;
+        self.reset_confirmation = None;
     }
 
     pub fn push_search_char(&mut self, character: char) {
@@ -579,6 +658,315 @@ impl App {
         let _ = self.config.save();
     }
 
+    pub fn set_theme(&mut self, theme_name: ThemeName) {
+        self.theme_name = theme_name;
+        self.config.theme = theme_name;
+        let _ = self.config.save();
+    }
+
+    pub fn stock_watchlist(&self) -> &[String] {
+        &self.config.watchlist.stock_symbols
+    }
+
+    pub fn crypto_watchlist(&self) -> &[String] {
+        &self.config.watchlist.crypto_symbols
+    }
+
+    pub fn selected_settings_item(&self) -> SettingsItem {
+        SettingsItem::ALL[self.settings_selection.min(SettingsItem::ALL.len() - 1)]
+    }
+
+    pub fn move_settings_selection(&mut self, direction: SelectionDirection) {
+        if self.reset_confirmation.is_some() {
+            return;
+        }
+
+        self.settings_selection = match direction {
+            SelectionDirection::Previous => {
+                if self.settings_selection == 0 {
+                    SettingsItem::ALL.len() - 1
+                } else {
+                    self.settings_selection - 1
+                }
+            }
+            SelectionDirection::Next => (self.settings_selection + 1) % SettingsItem::ALL.len(),
+        };
+    }
+
+    pub fn activate_settings_item(&mut self) {
+        if let Some(input) = &self.reset_confirmation {
+            if input.input == "reset" {
+                self.reset_settings_to_defaults();
+            }
+            return;
+        }
+
+        match self.selected_settings_item() {
+            SettingsItem::Language => self.toggle_locale(),
+            SettingsItem::Theme => self.set_theme(self.theme_name.next()),
+            SettingsItem::Onboarding => self.toggle_onboarding_preference(),
+            SettingsItem::Reset => {
+                self.reset_confirmation = Some(TextInput {
+                    input: String::new(),
+                });
+            }
+        }
+    }
+
+    pub fn push_reset_confirmation_char(&mut self, character: char) {
+        if character.is_control() {
+            return;
+        }
+
+        if let Some(input) = &mut self.reset_confirmation {
+            input.input.push(character);
+        }
+    }
+
+    pub fn pop_reset_confirmation_char(&mut self) {
+        if let Some(input) = &mut self.reset_confirmation {
+            input.input.pop();
+        }
+    }
+
+    pub fn is_editing_watchlist(&self) -> bool {
+        self.watchlist_editor.is_some()
+    }
+
+    pub fn open_watchlist_editor(&mut self) {
+        self.watchlist_editor = Some(WatchlistEditor {
+            selection: 0,
+            mode: None,
+        });
+    }
+
+    pub fn close_watchlist_editor(&mut self) {
+        if let Some(editor) = &mut self.watchlist_editor {
+            if editor.mode.is_some() {
+                editor.mode = None;
+                return;
+            }
+        }
+
+        self.watchlist_editor = None;
+    }
+
+    pub fn watchlist_rows(&self) -> Vec<WatchlistEditRow> {
+        let mut rows = Vec::new();
+        rows.push(WatchlistEditRow::AddStock);
+        rows.extend((0..self.config.watchlist.stock_symbols.len()).map(WatchlistEditRow::Stock));
+        rows.push(WatchlistEditRow::AddCrypto);
+        rows.extend((0..self.config.watchlist.crypto_symbols.len()).map(WatchlistEditRow::Crypto));
+        rows
+    }
+
+    pub fn selected_watchlist_row(&self) -> Option<WatchlistEditRow> {
+        let editor = self.watchlist_editor.as_ref()?;
+        self.watchlist_rows().get(editor.selection).copied()
+    }
+
+    pub fn move_watchlist_selection(&mut self, direction: SelectionDirection) {
+        if self
+            .watchlist_editor
+            .as_ref()
+            .is_some_and(|editor| editor.mode.is_some())
+        {
+            return;
+        }
+
+        let count = self.watchlist_rows().len();
+        let Some(editor) = &mut self.watchlist_editor else {
+            return;
+        };
+
+        editor.selection = match direction {
+            SelectionDirection::Previous => {
+                if editor.selection == 0 {
+                    count - 1
+                } else {
+                    editor.selection - 1
+                }
+            }
+            SelectionDirection::Next => (editor.selection + 1) % count,
+        };
+    }
+
+    pub fn activate_watchlist_editor(&mut self) {
+        if self
+            .watchlist_editor
+            .as_ref()
+            .is_some_and(|editor| editor.mode.is_some())
+        {
+            self.save_watchlist_input();
+            return;
+        }
+
+        match self.selected_watchlist_row() {
+            Some(WatchlistEditRow::AddStock) => self.begin_watchlist_add(WatchlistKind::Stock),
+            Some(WatchlistEditRow::AddCrypto) => self.begin_watchlist_add(WatchlistKind::Crypto),
+            Some(WatchlistEditRow::Stock(index)) => {
+                self.begin_watchlist_rename(WatchlistKind::Stock, index)
+            }
+            Some(WatchlistEditRow::Crypto(index)) => {
+                self.begin_watchlist_rename(WatchlistKind::Crypto, index)
+            }
+            None => {}
+        }
+    }
+
+    pub fn delete_selected_watchlist_symbol(&mut self) {
+        match self.selected_watchlist_row() {
+            Some(WatchlistEditRow::Stock(index)) => {
+                if index < self.config.watchlist.stock_symbols.len() {
+                    self.config.watchlist.stock_symbols.remove(index);
+                }
+            }
+            Some(WatchlistEditRow::Crypto(index)) => {
+                if index < self.config.watchlist.crypto_symbols.len() {
+                    self.config.watchlist.crypto_symbols.remove(index);
+                }
+            }
+            _ => return,
+        }
+
+        self.clamp_watchlist_selection();
+        self.retain_configured_quotes();
+        let _ = self.config.save();
+    }
+
+    pub fn begin_watchlist_add(&mut self, kind: WatchlistKind) {
+        if let Some(editor) = &mut self.watchlist_editor {
+            editor.mode = Some(WatchlistEditMode::Add {
+                kind,
+                input: String::new(),
+            });
+        }
+    }
+
+    pub fn push_watchlist_input_char(&mut self, character: char) {
+        if character.is_control() {
+            return;
+        }
+
+        match self
+            .watchlist_editor
+            .as_mut()
+            .and_then(|editor| editor.mode.as_mut())
+        {
+            Some(WatchlistEditMode::Add { input, .. })
+            | Some(WatchlistEditMode::Rename { input, .. }) => input.push(character),
+            None => {}
+        }
+    }
+
+    pub fn pop_watchlist_input_char(&mut self) {
+        match self
+            .watchlist_editor
+            .as_mut()
+            .and_then(|editor| editor.mode.as_mut())
+        {
+            Some(WatchlistEditMode::Add { input, .. })
+            | Some(WatchlistEditMode::Rename { input, .. }) => {
+                input.pop();
+            }
+            None => {}
+        }
+    }
+
+    fn begin_watchlist_rename(&mut self, kind: WatchlistKind, index: usize) {
+        let input = match kind {
+            WatchlistKind::Stock => self.config.watchlist.stock_symbols.get(index),
+            WatchlistKind::Crypto => self.config.watchlist.crypto_symbols.get(index),
+        }
+        .cloned()
+        .unwrap_or_default();
+
+        if let Some(editor) = &mut self.watchlist_editor {
+            editor.mode = Some(WatchlistEditMode::Rename { kind, index, input });
+        }
+    }
+
+    fn save_watchlist_input(&mut self) {
+        let Some(mode) = self
+            .watchlist_editor
+            .as_mut()
+            .and_then(|editor| editor.mode.take())
+        else {
+            return;
+        };
+
+        match mode {
+            WatchlistEditMode::Add { kind, input } => {
+                if let Some(symbol) = normalize_symbol(&input) {
+                    let list = self.watchlist_mut(kind);
+                    if !list.contains(&symbol) {
+                        list.push(symbol);
+                    }
+                }
+            }
+            WatchlistEditMode::Rename { kind, index, input } => {
+                if let Some(symbol) = normalize_symbol(&input) {
+                    let list = self.watchlist_mut(kind);
+                    if index < list.len() {
+                        list[index] = symbol;
+                    }
+                }
+            }
+        }
+
+        self.config.watchlist.stock_symbols.sort();
+        self.config.watchlist.stock_symbols.dedup();
+        self.config.watchlist.crypto_symbols.sort();
+        self.config.watchlist.crypto_symbols.dedup();
+        self.retain_configured_quotes();
+        self.clamp_watchlist_selection();
+        let _ = self.config.save();
+    }
+
+    fn watchlist_mut(&mut self, kind: WatchlistKind) -> &mut Vec<String> {
+        match kind {
+            WatchlistKind::Stock => &mut self.config.watchlist.stock_symbols,
+            WatchlistKind::Crypto => &mut self.config.watchlist.crypto_symbols,
+        }
+    }
+
+    fn retain_configured_quotes(&mut self) {
+        self.stock_quotes
+            .retain(|quote| self.config.watchlist.stock_symbols.contains(&quote.symbol));
+        self.crypto_quotes
+            .retain(|quote| self.config.watchlist.crypto_symbols.contains(&quote.symbol));
+    }
+
+    fn clamp_watchlist_selection(&mut self) {
+        let count = self.watchlist_rows().len();
+        if let Some(editor) = &mut self.watchlist_editor {
+            editor.selection = editor.selection.min(count.saturating_sub(1));
+        }
+    }
+
+    fn toggle_onboarding_preference(&mut self) {
+        self.onboarding_complete = !self.onboarding_complete;
+        self.config.onboarding.completed = self.onboarding_complete;
+        let _ = self.config.save();
+    }
+
+    fn reset_settings_to_defaults(&mut self) {
+        let config = AppConfig::default().unwrap_or_else(|_| <AppConfig as Default>::default());
+        self.config = config.clone();
+        let locale = config.locale.clone();
+        self.locale = locale.clone();
+        self.i18n.set_active(locale);
+        self.theme_name = config.theme;
+        self.onboarding_complete = config.onboarding.completed;
+        self.onboarding_step = OnboardingStep::Welcome;
+        self.page = Page::Onboarding;
+        self.settings_selection = 0;
+        self.reset_confirmation = None;
+        self.watchlist_editor = None;
+        self.reset_dashboard();
+        let _ = self.config.save();
+    }
+
     pub fn sync_search_scroll(&mut self, visible_rows: usize) {
         if visible_rows == 0 {
             self.search_scroll = self.search_selection;
@@ -634,6 +1022,10 @@ impl App {
 
 impl PanelId {
     pub const ALL: [Self; 4] = [Self::News, Self::Watchlist, Self::Calendar, Self::Notes];
+}
+
+impl SettingsItem {
+    pub const ALL: [Self; 4] = [Self::Language, Self::Theme, Self::Onboarding, Self::Reset];
 }
 
 impl WindowKind {
@@ -728,6 +1120,15 @@ fn adjust_percent(percent: u16, amount: i16) -> u16 {
     percent
         .saturating_add_signed(amount)
         .clamp(DashboardLayout::MIN_PERCENT, DashboardLayout::MAX_PERCENT)
+}
+
+fn normalize_symbol(input: &str) -> Option<String> {
+    let symbol = input.trim().to_ascii_uppercase();
+    if symbol.is_empty() {
+        None
+    } else {
+        Some(symbol)
+    }
 }
 
 impl ThemeName {

@@ -57,7 +57,10 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     terminal.clear()?;
 
     let mut app = App::new(config.clone());
-    let market_events = market::spawn_market_streams();
+    let market_events = market::spawn_market_streams(
+        config.watchlist.crypto_symbols.clone(),
+        config.watchlist.stock_symbols.clone(),
+    );
 
     let result = run_app(&mut terminal, &mut app, market_events);
 

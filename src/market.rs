@@ -10,8 +10,6 @@ use std::{
 use serde_json::Value;
 use tungstenite::{Message, connect};
 
-const BINANCE_STREAM_URL: &str =
-    "wss://stream.binance.com:9443/stream?streams=btcusdt@ticker/ethusdt@ticker/solusdt@ticker";
 const LOCAL_PYTHON: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.venv/bin/python");
 const YFINANCE_SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/yfinance_stream.py");
 
@@ -37,27 +35,37 @@ pub enum MarketSession {
     AfterHours,
 }
 
-pub fn spawn_market_streams() -> Receiver<MarketEvent> {
+pub fn spawn_market_streams(
+    crypto_symbols: Vec<String>,
+    stock_symbols: Vec<String>,
+) -> Receiver<MarketEvent> {
     let (sender, receiver) = mpsc::channel();
 
-    spawn_binance_stream(sender.clone());
-    spawn_yfinance_stream(sender);
+    spawn_binance_stream(sender.clone(), crypto_symbols);
+    spawn_yfinance_stream(sender, stock_symbols);
 
     receiver
 }
 
-fn spawn_binance_stream(sender: Sender<MarketEvent>) {
+fn spawn_binance_stream(sender: Sender<MarketEvent>, symbols: Vec<String>) {
+    let Some(stream_url) = binance_stream_url(&symbols) else {
+        return;
+    };
+
     thread::spawn(move || {
         loop {
-            if stream_binance_prices(&sender).is_err() {
+            if stream_binance_prices(&sender, &stream_url).is_err() {
                 thread::sleep(Duration::from_secs(3));
             }
         }
     });
 }
 
-fn stream_binance_prices(sender: &Sender<MarketEvent>) -> tungstenite::Result<()> {
-    let (mut socket, _) = connect(BINANCE_STREAM_URL)?;
+fn stream_binance_prices(
+    sender: &Sender<MarketEvent>,
+    stream_url: &str,
+) -> tungstenite::Result<()> {
+    let (mut socket, _) = connect(stream_url)?;
 
     loop {
         let message = socket.read()?;
@@ -73,6 +81,24 @@ fn stream_binance_prices(sender: &Sender<MarketEvent>) -> tungstenite::Result<()
     }
 
     Ok(())
+}
+
+fn binance_stream_url(symbols: &[String]) -> Option<String> {
+    let streams = symbols
+        .iter()
+        .map(|symbol| symbol.trim().to_ascii_lowercase())
+        .filter(|symbol| !symbol.is_empty())
+        .map(|symbol| format!("{symbol}@ticker"))
+        .collect::<Vec<_>>();
+
+    if streams.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "wss://stream.binance.com:9443/stream?streams={}",
+            streams.join("/")
+        ))
+    }
 }
 
 fn parse_ticker_message(text: &str) -> Option<MarketEvent> {
@@ -100,20 +126,25 @@ impl MarketSession {
     }
 }
 
-fn spawn_yfinance_stream(sender: Sender<MarketEvent>) {
+fn spawn_yfinance_stream(sender: Sender<MarketEvent>, symbols: Vec<String>) {
+    if symbols.is_empty() {
+        return;
+    }
+
     thread::spawn(move || {
         loop {
-            if stream_yfinance_prices(&sender).is_err() {
+            if stream_yfinance_prices(&sender, &symbols).is_err() {
                 thread::sleep(Duration::from_secs(5));
             }
         }
     });
 }
 
-fn stream_yfinance_prices(sender: &Sender<MarketEvent>) -> std::io::Result<()> {
+fn stream_yfinance_prices(sender: &Sender<MarketEvent>, symbols: &[String]) -> std::io::Result<()> {
     let mut child = Command::new(python_command())
         .arg("-u")
         .arg(YFINANCE_SCRIPT)
+        .args(symbols)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;

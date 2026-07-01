@@ -42,6 +42,10 @@ pub enum Key {
     DashboardHelpResize,
     #[strum(serialize = "dashboard.help.change_pane")]
     DashboardHelpChangePane,
+    #[strum(serialize = "dashboard.help.settings")]
+    DashboardHelpSettings,
+    #[strum(serialize = "dashboard.help.edit_watchlist")]
+    DashboardHelpEditWatchlist,
     #[strum(serialize = "dashboard.help.split")]
     DashboardHelpSplit,
     #[strum(serialize = "dashboard.help.add_panel")]
@@ -70,6 +74,22 @@ pub enum Key {
     WatchlistStatusConnectingBinance,
     #[strum(serialize = "watchlist.status.live_quotes_pending")]
     WatchlistStatusLiveQuotesPending,
+    #[strum(serialize = "watchlist.status.loading_quote")]
+    WatchlistStatusLoadingQuote,
+    #[strum(serialize = "watchlist.market.pending")]
+    WatchlistMarketPending,
+    #[strum(serialize = "watchlist.edit.help")]
+    WatchlistEditHelp,
+    #[strum(serialize = "watchlist.edit.add_stock")]
+    WatchlistEditAddStock,
+    #[strum(serialize = "watchlist.edit.add_crypto")]
+    WatchlistEditAddCrypto,
+    #[strum(serialize = "watchlist.edit.input_stock")]
+    WatchlistEditInputStock,
+    #[strum(serialize = "watchlist.edit.input_crypto")]
+    WatchlistEditInputCrypto,
+    #[strum(serialize = "watchlist.edit.input_rename")]
+    WatchlistEditInputRename,
     #[strum(serialize = "watchlist.market.pre_market")]
     WatchlistMarketPreMarket,
     #[strum(serialize = "watchlist.market.regular")]
@@ -168,4 +188,30 @@ pub enum Key {
     DetailsLabelUpdated,
     #[strum(serialize = "details.value.days")]
     DetailsValueDays,
+    #[strum(serialize = "settings.title")]
+    SettingsTitle,
+    #[strum(serialize = "settings.footer")]
+    SettingsFooter,
+    #[strum(serialize = "settings.section.preferences")]
+    SettingsSectionPreferences,
+    #[strum(serialize = "settings.section.danger")]
+    SettingsSectionDanger,
+    #[strum(serialize = "settings.row.language")]
+    SettingsRowLanguage,
+    #[strum(serialize = "settings.row.theme")]
+    SettingsRowTheme,
+    #[strum(serialize = "settings.row.onboarding")]
+    SettingsRowOnboarding,
+    #[strum(serialize = "settings.row.reset")]
+    SettingsRowReset,
+    #[strum(serialize = "settings.value.on")]
+    SettingsValueOn,
+    #[strum(serialize = "settings.value.off")]
+    SettingsValueOff,
+    #[strum(serialize = "settings.reset.prompt")]
+    SettingsResetPrompt,
+    #[strum(serialize = "settings.reset.input_label")]
+    SettingsResetInputLabel,
+    #[strum(serialize = "settings.reset.warning")]
+    SettingsResetWarning,
 }

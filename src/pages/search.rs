@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
@@ -8,7 +8,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    app::{App, SearchAssetKind},
+    app::{App, Page, SearchAssetKind},
     i18n::{Key, Locale},
     pages::fill::Fill,
     search::LiveInstrumentDetails,
@@ -65,6 +65,14 @@ pub fn render(frame: &mut Frame, app: &App) {
             .border_style(Style::default().fg(theme.accent)),
     );
     frame.render_widget(input, chunks[0]);
+    if app.page == Page::Search {
+        frame.set_cursor_position(Position::new(
+            chunks[0]
+                .x
+                .saturating_add(2 + app.search_query.len() as u16),
+            chunks[0].y,
+        ));
+    }
 
     if let Some(message) = &app.search_message {
         frame.render_widget(
@@ -144,10 +152,23 @@ pub fn render_details(frame: &mut Frame, app: &App) {
         lines.push(Line::from(""));
     } else if app.live_details_loading {
         lines.push(section_title("\u{f201}", app.t(Key::DetailsSectionQuote)));
-        lines.push(Line::from(Span::styled(
-            app.t(Key::DetailsStatusLoading),
-            Style::default().fg(theme.muted),
-        )));
+        lines.push(loading_quote_line(app, theme.muted));
+        lines.push(Line::from(""));
+        lines.push(section_title(
+            "\u{f1de}",
+            app.t(Key::DetailsSectionFundamentals),
+        ));
+        let label_width = detail_label_width(app);
+        for label in loading_fundamental_labels(app) {
+            push_detail_row(
+                &mut lines,
+                label,
+                Some("...".to_string()),
+                label_width,
+                theme.foreground,
+                theme.muted,
+            );
+        }
         lines.push(Line::from(""));
     }
 
@@ -348,6 +369,24 @@ fn quote_line<'a>(
     ])
 }
 
+fn loading_quote_line<'a>(app: &'a App, muted: Color) -> Line<'a> {
+    let current_price_width = app.i18n.width(Key::DetailsLabelCurrentPrice).max(20);
+    let change_width = app.i18n.width(Key::DetailsLabelChange).max(12);
+
+    Line::from(vec![
+        Span::styled(
+            pad_right(app.t(Key::DetailsLabelCurrentPrice), current_price_width),
+            Style::default().fg(muted),
+        ),
+        Span::styled(format!("{:<14}", "..."), Style::default().fg(muted)),
+        Span::styled(
+            pad_right(app.t(Key::DetailsLabelChange), change_width),
+            Style::default().fg(muted),
+        ),
+        Span::styled("-", Style::default().fg(muted)),
+    ])
+}
+
 fn fundamental_rows<'a>(
     live: &LiveInstrumentDetails,
     app: &'a App,
@@ -413,6 +452,18 @@ fn profile_rows<'a>(
             app.t(Key::DetailsLabelUpdated),
             details.last_updated.clone(),
         ),
+    ]
+}
+
+fn loading_fundamental_labels(app: &App) -> Vec<&str> {
+    vec![
+        app.t(Key::DetailsLabelPreviousClose),
+        app.t(Key::DetailsLabelWeekHigh),
+        app.t(Key::DetailsLabelWeekLow),
+        app.t(Key::DetailsLabelMarketCap),
+        app.t(Key::DetailsLabelAvgVolume),
+        app.t(Key::DetailsLabelPeRatio),
+        app.t(Key::DetailsLabelDividendYield),
     ]
 }
 

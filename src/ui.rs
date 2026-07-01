@@ -2,7 +2,7 @@ use ratatui::Frame;
 
 use crate::{
     app::{App, Page},
-    pages::{dashboard, onboarding, search},
+    pages::{dashboard, onboarding, search, settings},
 };
 
 pub fn render(frame: &mut Frame, app: &App) {
@@ -11,5 +11,6 @@ pub fn render(frame: &mut Frame, app: &App) {
         Page::Dashboard => dashboard::render(frame, app),
         Page::Search => search::render(frame, app),
         Page::Details => search::render_details(frame, app),
+        Page::Settings => settings::render(frame, app),
     }
 }

@@ -23,7 +23,7 @@ pub enum PriceDirection {
 pub fn update_market_quotes(
     crypto_quotes: &mut Vec<Quote>,
     stock_quotes: &mut Vec<Quote>,
-    stock_market_session: &mut MarketSession,
+    stock_market_session: &mut Option<MarketSession>,
     event: MarketEvent,
 ) {
     match event {
@@ -38,7 +38,7 @@ pub fn update_market_quotes(
             price_change_percent,
             market_session,
         } => {
-            *stock_market_session = market_session;
+            *stock_market_session = Some(market_session);
             update_quotes(stock_quotes, symbol, price, price_change_percent);
         }
     }
