@@ -7,7 +7,8 @@ use ratatui::{
 };
 
 use crate::{
-    app::{App, Language, OnboardingStep, ThemeName},
+    app::{App, OnboardingStep, ThemeName},
+    i18n::{Key, Locale},
     theme::current_theme,
 };
 
@@ -37,7 +38,7 @@ fn render_welcome(frame: &mut Frame, app: &App) {
         .alignment(Alignment::Center)
         .style(Style::default().fg(theme.foreground));
 
-    let prompt = Paragraph::new("press \u{21B5} to continue")
+    let prompt = Paragraph::new(app.t(Key::OnboardingPromptContinue))
         .alignment(Alignment::Center)
         .style(Style::default().fg(theme.muted).add_modifier(Modifier::DIM));
 
@@ -46,41 +47,39 @@ fn render_welcome(frame: &mut Frame, app: &App) {
 }
 
 fn render_language(frame: &mut Frame, app: &App) {
-    let title = match app.language {
-        Language::English => "\u{eb01} language",
-        Language::German => "\u{eb01} sprache",
-    };
+    let options = app
+        .i18n
+        .available_locales()
+        .into_iter()
+        .map(|locale| (locale_label(app, &locale), locale == app.locale))
+        .collect::<Vec<_>>();
 
-    render_menu(
-        frame,
-        app,
-        title,
-        &[
-            ("English", app.language == Language::English),
-            ("Deutsch", app.language == Language::German),
-        ],
-    );
+    render_menu(frame, app, app.t(Key::OnboardingTitleLanguage), &options);
 }
 
 fn render_theme(frame: &mut Frame, app: &App) {
-    let title = match app.language {
-        Language::English => "\u{25D0} theme",
-        Language::German => " \u{24D0} theme",
-    };
-
     render_menu(
         frame,
         app,
-        title,
+        app.t(Key::OnboardingTitleTheme),
         &[
-            ("Dark", app.theme_name == ThemeName::Dark),
-            ("Light", app.theme_name == ThemeName::Light),
-            ("Transparent", app.theme_name == ThemeName::Transparent),
+            (
+                app.t(Key::AppThemeDark).to_string(),
+                app.theme_name == ThemeName::Dark,
+            ),
+            (
+                app.t(Key::AppThemeLight).to_string(),
+                app.theme_name == ThemeName::Light,
+            ),
+            (
+                app.t(Key::AppThemeTransparent).to_string(),
+                app.theme_name == ThemeName::Transparent,
+            ),
         ],
     );
 }
 
-fn render_menu(frame: &mut Frame, app: &App, title: &'static str, options: &[(&str, bool)]) {
+fn render_menu(frame: &mut Frame, app: &App, title: &str, options: &[(String, bool)]) {
     let theme = current_theme(app.theme_name);
     let chunks = menu_chunks(frame.area(), options.len() as u16);
 
@@ -88,7 +87,7 @@ fn render_menu(frame: &mut Frame, app: &App, title: &'static str, options: &[(&s
         .alignment(Alignment::Center)
         .style(Style::default().fg(theme.foreground));
 
-    let prompt = Paragraph::new("press \u{21B5} to continue")
+    let prompt = Paragraph::new(app.t(Key::OnboardingPromptContinue))
         .alignment(Alignment::Center)
         .style(Style::default().fg(theme.muted).add_modifier(Modifier::DIM));
 
@@ -97,7 +96,7 @@ fn render_menu(frame: &mut Frame, app: &App, title: &'static str, options: &[(&s
     frame.render_widget(prompt, chunks[3]);
 }
 
-fn render_options(frame: &mut Frame, app: &App, area: Rect, options: &[(&str, bool)]) {
+fn render_options(frame: &mut Frame, app: &App, area: Rect, options: &[(String, bool)]) {
     let theme = current_theme(app.theme_name);
     let option_area = centered_rect(area, 20, options.len() as u16);
     let rows = Layout::default()
@@ -117,11 +116,18 @@ fn render_options(frame: &mut Frame, app: &App, area: Rect, options: &[(&str, bo
 
         let row = Line::from(vec![
             Span::styled(format!("{marker} "), style),
-            Span::styled(*label, style),
+            Span::styled(label.as_str(), style),
         ]);
 
         frame.render_widget(Paragraph::new(row), rows[index]);
     }
+}
+
+fn locale_label(app: &App, locale: &Locale) -> String {
+    locale
+        .language_key()
+        .map(|key| app.t(key).to_string())
+        .unwrap_or_else(|| locale.code().to_string())
 }
 
 fn welcome_chunks(area: Rect) -> std::rc::Rc<[Rect]> {

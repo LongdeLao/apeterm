@@ -1,10 +1,26 @@
-use crate::market::MarketEvent;
-use crate::quotes::{CryptoQuote, update_crypto_quotes};
+use std::{
+    path::PathBuf,
+    sync::mpsc::{self, Receiver},
+    thread,
+};
+
+use crate::{
+    config::AppConfig,
+    i18n::{I18n, Key, Locale},
+    market::{MarketEvent, MarketSession},
+    quotes::{Quote, update_market_quotes},
+    search::{self, InstrumentDetails, LiveInstrumentDetails, SearchResult},
+};
+
+const SEARCH_PAGE_SIZE: usize = 30;
+const SEARCH_VISIBLE_ROWS: usize = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Onboarding,
     Dashboard,
+    Search,
+    Details,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,12 +28,6 @@ pub enum OnboardingStep {
     Welcome,
     Language,
     Theme,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
-    English,
-    German,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +82,12 @@ pub enum SplitDirection {
     Vertical,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchAssetKind {
+    Stocks,
+    Etfs,
+}
+
 #[derive(Debug)]
 pub struct App {
     pub should_quit: bool,
@@ -79,7 +95,8 @@ pub struct App {
     pub onboarding_step: OnboardingStep,
     pub onboarding_complete: bool,
     pub logged_in: bool,
-    pub language: Language,
+    pub locale: Locale,
+    pub i18n: I18n,
     pub theme_name: ThemeName,
     pub dashboard_layout: DashboardLayout,
     pub focused_panel: PanelId,
@@ -88,7 +105,22 @@ pub struct App {
     pub pending_split: bool,
     pub panel_contents: PanelContents,
     pub window_picker_index: usize,
-    pub crypto_quotes: Vec<CryptoQuote>,
+    pub crypto_quotes: Vec<Quote>,
+    pub stock_quotes: Vec<Quote>,
+    pub stock_market_session: MarketSession,
+    pub ticker_db_path: PathBuf,
+    pub search_query: String,
+    pub search_results: Vec<SearchResult>,
+    pub search_selection: usize,
+    pub search_scroll: usize,
+    pub search_limit: usize,
+    pub search_asset_kind: SearchAssetKind,
+    pub selected_details: Option<InstrumentDetails>,
+    pub selected_live_details: Option<LiveInstrumentDetails>,
+    pub live_details_loading: bool,
+    live_details_receiver: Option<Receiver<Option<LiveInstrumentDetails>>>,
+    pub search_message: Option<String>,
+    config: AppConfig,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,14 +131,16 @@ pub struct DashboardLayout {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(config: AppConfig) -> Self {
+        let locale = config.locale.clone();
         Self {
             should_quit: false,
             page: Page::Onboarding,
             onboarding_step: OnboardingStep::Welcome,
             onboarding_complete: false,
             logged_in: false,
-            language: Language::English,
+            locale: locale.clone(),
+            i18n: I18n::new(locale),
             theme_name: ThemeName::Dark,
             dashboard_layout: DashboardLayout::default(),
             focused_panel: PanelId::News,
@@ -116,7 +150,26 @@ impl App {
             panel_contents: PanelContents::default(),
             window_picker_index: 0,
             crypto_quotes: Vec::new(),
+            stock_quotes: Vec::new(),
+            stock_market_session: MarketSession::AfterHours,
+            ticker_db_path: config.ticker_db_path.clone(),
+            search_query: String::new(),
+            search_results: Vec::new(),
+            search_selection: 0,
+            search_scroll: 0,
+            search_limit: SEARCH_PAGE_SIZE,
+            search_asset_kind: SearchAssetKind::Stocks,
+            selected_details: None,
+            selected_live_details: None,
+            live_details_loading: false,
+            live_details_receiver: None,
+            search_message: None,
+            config,
         }
+    }
+
+    pub fn t(&self, key: Key) -> &str {
+        self.i18n.t(key)
     }
 
     pub fn advance_onboarding(&mut self) {
@@ -134,13 +187,38 @@ impl App {
     pub fn move_selection(&mut self, direction: SelectionDirection) {
         match self.onboarding_step {
             OnboardingStep::Welcome => {}
-            OnboardingStep::Language => self.language = self.language.move_to(direction),
+            OnboardingStep::Language => {
+                let locales = self.i18n.available_locales();
+                if locales.is_empty() {
+                    return;
+                }
+                let current = locales
+                    .iter()
+                    .position(|locale| locale == &self.locale)
+                    .unwrap_or(0);
+                let next = match direction {
+                    SelectionDirection::Previous => {
+                        if current == 0 {
+                            locales.len() - 1
+                        } else {
+                            current - 1
+                        }
+                    }
+                    SelectionDirection::Next => (current + 1) % locales.len(),
+                };
+                self.set_locale(locales[next].clone());
+            }
             OnboardingStep::Theme => self.theme_name = self.theme_name.move_to(direction),
         }
     }
 
     pub fn handle_market_event(&mut self, event: MarketEvent) {
-        update_crypto_quotes(&mut self.crypto_quotes, event);
+        update_market_quotes(
+            &mut self.crypto_quotes,
+            &mut self.stock_quotes,
+            &mut self.stock_market_session,
+            event,
+        );
     }
 
     pub fn focus_panel(&mut self, panel_id: PanelId) {
@@ -198,9 +276,22 @@ impl App {
         self.pending_split = false;
     }
 
+    pub fn toggle_locale(&mut self) {
+        self.set_locale(self.i18n.next_locale(&self.locale));
+    }
+
     pub fn close_help(&mut self) {
         self.show_help = false;
         self.pending_split = false;
+        if self.page == Page::Details {
+            self.page = Page::Search;
+            self.selected_details = None;
+            self.selected_live_details = None;
+            self.live_details_loading = false;
+            self.live_details_receiver = None;
+        } else if self.page == Page::Search {
+            self.page = Page::Dashboard;
+        }
     }
 
     pub fn is_panel_open(&self, panel_id: PanelId) -> bool {
@@ -333,6 +424,180 @@ impl App {
         self.set_panel_content(self.focused_panel, window_kind);
     }
 
+    pub fn open_search(&mut self) {
+        self.page = Page::Search;
+        self.show_help = false;
+        self.pending_split = false;
+        self.refresh_search();
+    }
+
+    pub fn push_search_char(&mut self, character: char) {
+        if character.is_control() {
+            return;
+        }
+        self.search_query.push(character);
+        self.reset_search_window();
+        self.refresh_search();
+    }
+
+    pub fn pop_search_char(&mut self) {
+        self.search_query.pop();
+        self.reset_search_window();
+        self.refresh_search();
+    }
+
+    pub fn move_search_selection(&mut self, direction: SelectionDirection) {
+        if self.search_results.is_empty() {
+            self.search_selection = 0;
+            self.search_scroll = 0;
+            return;
+        }
+
+        match direction {
+            SelectionDirection::Previous => {
+                self.search_selection = self.search_selection.saturating_sub(1);
+            }
+            SelectionDirection::Next => {
+                if self.search_selection + 1 < self.search_results.len() {
+                    self.search_selection += 1;
+                } else {
+                    let previous_len = self.search_results.len();
+                    self.search_limit += SEARCH_PAGE_SIZE;
+                    self.refresh_search();
+                    if self.search_results.len() > previous_len {
+                        self.search_selection += 1;
+                    }
+                }
+            }
+        }
+        self.sync_search_scroll(SEARCH_VISIBLE_ROWS);
+    }
+
+    pub fn open_selected_details(&mut self) {
+        let Some(result) = self.search_results.get(self.search_selection) else {
+            return;
+        };
+
+        match crate::db::open(&self.ticker_db_path)
+            .and_then(|connection| search::details(&connection, &result.symbol))
+        {
+            Ok(details) => {
+                self.selected_details = details;
+                self.selected_live_details = None;
+                self.live_details_receiver = None;
+                self.live_details_loading = false;
+                self.page = Page::Details;
+                self.search_message = None;
+                self.spawn_live_details_fetch(result.symbol.clone());
+            }
+            Err(error) => {
+                self.search_message = Some(
+                    self.t(Key::SearchErrorDetailsUnavailable)
+                        .replace("{error}", &error.to_string()),
+                );
+            }
+        }
+    }
+
+    pub fn poll_live_details(&mut self) {
+        let Some(receiver) = &self.live_details_receiver else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(details) => {
+                self.selected_live_details = details;
+                self.live_details_loading = false;
+                self.live_details_receiver = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.live_details_loading = false;
+                self.live_details_receiver = None;
+            }
+        }
+    }
+
+    fn spawn_live_details_fetch(&mut self, symbol: String) {
+        let (sender, receiver) = mpsc::channel();
+        self.live_details_receiver = Some(receiver);
+        self.live_details_loading = true;
+        thread::spawn(move || {
+            let details = search::live_details(&symbol);
+            let _ = sender.send(details);
+        });
+    }
+
+    pub fn toggle_search_asset_kind(&mut self) {
+        self.search_asset_kind = match self.search_asset_kind {
+            SearchAssetKind::Stocks => SearchAssetKind::Etfs,
+            SearchAssetKind::Etfs => SearchAssetKind::Stocks,
+        };
+        self.reset_search_window();
+        self.refresh_search();
+    }
+
+    pub fn search_asset_type(&self) -> &'static str {
+        match self.search_asset_kind {
+            SearchAssetKind::Stocks => "stock",
+            SearchAssetKind::Etfs => "etf",
+        }
+    }
+
+    fn refresh_search(&mut self) {
+        match crate::db::open(&self.ticker_db_path).and_then(|connection| {
+            search::search(
+                &connection,
+                &self.search_query,
+                self.search_asset_type(),
+                self.search_limit,
+            )
+        }) {
+            Ok(results) => {
+                self.search_results = results;
+                self.search_selection = self
+                    .search_selection
+                    .min(self.search_results.len().saturating_sub(1));
+                self.sync_search_scroll(SEARCH_VISIBLE_ROWS);
+                self.search_message = None;
+            }
+            Err(error) => {
+                self.search_results.clear();
+                self.search_selection = 0;
+                self.search_scroll = 0;
+                self.search_message = Some(
+                    self.t(Key::SearchErrorDatabaseUnavailable)
+                        .replace("{error}", &error.to_string()),
+                );
+            }
+        }
+    }
+
+    fn set_locale(&mut self, locale: Locale) {
+        self.locale = locale.clone();
+        self.i18n.set_active(locale.clone());
+        self.config.locale = locale;
+        let _ = self.config.save();
+    }
+
+    pub fn sync_search_scroll(&mut self, visible_rows: usize) {
+        if visible_rows == 0 {
+            self.search_scroll = self.search_selection;
+            return;
+        }
+
+        if self.search_selection < self.search_scroll {
+            self.search_scroll = self.search_selection;
+        } else if self.search_selection >= self.search_scroll + visible_rows {
+            self.search_scroll = self.search_selection + 1 - visible_rows;
+        }
+    }
+
+    fn reset_search_window(&mut self) {
+        self.search_selection = 0;
+        self.search_scroll = 0;
+        self.search_limit = SEARCH_PAGE_SIZE;
+    }
+
     fn focus_by_offset(&mut self, offset: usize) {
         let current_index = PanelId::ALL
             .iter()
@@ -374,13 +639,13 @@ impl PanelId {
 impl WindowKind {
     pub const CHOICES: [Self; 4] = [Self::News, Self::Watchlist, Self::Calendar, Self::Notes];
 
-    pub fn label(self) -> &'static str {
+    pub fn label_key(self) -> Key {
         match self {
-            Self::News => "news",
-            Self::Watchlist => "watchlist",
-            Self::Calendar => "macro calendar",
-            Self::Notes => "notes",
-            Self::Picker => "select window",
+            Self::News => Key::PanelTitleNews,
+            Self::Watchlist => Key::PanelTitleWatchlist,
+            Self::Calendar => Key::PanelTitleCalendar,
+            Self::Notes => Key::PanelTitleNotes,
+            Self::Picker => Key::PanelTitlePicker,
         }
     }
 }
@@ -465,28 +730,6 @@ fn adjust_percent(percent: u16, amount: i16) -> u16 {
         .clamp(DashboardLayout::MIN_PERCENT, DashboardLayout::MAX_PERCENT)
 }
 
-impl Language {
-    fn move_to(self, direction: SelectionDirection) -> Self {
-        match self {
-            Self::English => match direction {
-                SelectionDirection::Previous => Self::German,
-                SelectionDirection::Next => Self::German,
-            },
-            Self::German => match direction {
-                SelectionDirection::Previous => Self::English,
-                SelectionDirection::Next => Self::English,
-            },
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::English => "English",
-            Self::German => "Deutsch",
-        }
-    }
-}
-
 impl ThemeName {
     fn move_to(self, direction: SelectionDirection) -> Self {
         match direction {
@@ -511,11 +754,11 @@ impl ThemeName {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    pub fn label_key(self) -> Key {
         match self {
-            Self::Dark => "Dark",
-            Self::Light => "Light",
-            Self::Transparent => "Transparent",
+            Self::Dark => Key::AppThemeDark,
+            Self::Light => Key::AppThemeLight,
+            Self::Transparent => Key::AppThemeTransparent,
         }
     }
 }

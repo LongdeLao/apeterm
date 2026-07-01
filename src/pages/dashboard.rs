@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::{
     app::{App, PanelId, WindowKind},
+    i18n::Key,
     pages::{calendar, fill::Fill, news, notes, watchlist},
     theme::current_theme,
 };
@@ -67,7 +68,7 @@ fn render_picker(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
 
         lines.push(Line::from(vec![
             Span::styled(format!("{marker} "), style),
-            Span::styled(window_kind.label(), style),
+            Span::styled(app.t(window_kind.label_key()), style),
         ]));
     }
 
@@ -238,29 +239,31 @@ fn vertical_line(height: u16) -> Vec<Line<'static>> {
 
 fn render_help(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
-    let area = centered_rect(frame.area(), 46, 13);
+    let area = centered_rect(frame.area(), 50, 15);
     let text = [
-        "tab / shift+tab   focus next / previous",
-        "n / p             focus next / previous",
-        "h j k l           move focus",
-        "ctrl+h/j/k/l      resize focused pane",
-        "c                 change focused pane",
-        "s h / s v         split horizontal / vertical",
-        "a                 add last closed panel",
-        "drag dividers     resize with mouse",
-        "click panel       focus panel",
-        "x                 close focused panel",
-        "r                 reset layout",
-        "esc               close help",
-        "ctrl+q            quit",
+        app.t(Key::DashboardHelpFocusTab),
+        app.t(Key::DashboardHelpFocusNp),
+        app.t(Key::DashboardHelpMoveFocus),
+        app.t(Key::DashboardHelpResize),
+        app.t(Key::DashboardHelpChangePane),
+        app.t(Key::DashboardHelpSplit),
+        app.t(Key::DashboardHelpAddPanel),
+        app.t(Key::DashboardHelpSearch),
+        app.t(Key::DashboardHelpToggleLocale),
+        app.t(Key::DashboardHelpDrag),
+        app.t(Key::DashboardHelpClick),
+        app.t(Key::DashboardHelpClosePanel),
+        app.t(Key::DashboardHelpReset),
+        app.t(Key::DashboardHelpCloseHelp),
+        app.t(Key::DashboardHelpQuit),
     ]
     .join("\n");
 
     let modal_background = theme.background.unwrap_or(Color::Rgb(0, 0, 0));
     let title = if app.pending_split {
-        " keys: split "
+        app.t(Key::DashboardHelpTitleSplit)
     } else {
-        " keys "
+        app.t(Key::DashboardHelpTitle)
     };
     let help = Paragraph::new(text)
         .alignment(Alignment::Left)

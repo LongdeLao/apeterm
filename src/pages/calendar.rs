@@ -1,6 +1,6 @@
 use ratatui::{Frame, layout::Rect};
 
-use crate::{app::App, app::PanelId, pages::panel};
+use crate::{app::App, app::PanelId, i18n::Key, pages::panel};
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     panel::render(
@@ -8,7 +8,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         app,
         area,
         panel_id,
-        "macro calendar",
-        &["Macro events will appear here."],
+        app.t(Key::PanelTitleCalendar),
+        &[app.t(Key::CalendarEmpty)],
     );
 }

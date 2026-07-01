@@ -16,7 +16,7 @@ pub fn render(
     app: &App,
     area: Rect,
     panel_id: PanelId,
-    title: &'static str,
+    title: &str,
     lines: &[&str],
 ) {
     if !app.is_panel_open(panel_id) {

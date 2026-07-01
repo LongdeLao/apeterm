@@ -1,20 +1,38 @@
 use ratatui::{Frame, layout::Rect};
 
-use crate::{app::App, app::PanelId, pages::panel};
+use crate::{app::App, app::PanelId, i18n::Key, pages::panel};
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     let session = if app.logged_in {
-        "session: logged in"
+        app.t(Key::NotesSessionLoggedIn)
     } else {
-        "session: logged out"
+        app.t(Key::NotesSessionLoggedOut)
     };
     let lines = [
-        "Write market thoughts soon.".to_string(),
-        format!("language: {}", app.language.label()),
-        format!("theme: {}", app.theme_name.label()),
+        app.t(Key::NotesEmpty).to_string(),
+        format!("{}: {}", app.t(Key::NotesLanguage), locale_label(app)),
+        format!(
+            "{}: {}",
+            app.t(Key::NotesTheme),
+            app.t(app.theme_name.label_key())
+        ),
         session.to_string(),
     ];
     let line_refs: Vec<&str> = lines.iter().map(String::as_str).collect();
 
-    panel::render(frame, app, area, panel_id, "notes", &line_refs);
+    panel::render(
+        frame,
+        app,
+        area,
+        panel_id,
+        app.t(Key::PanelTitleNotes),
+        &line_refs,
+    );
+}
+
+fn locale_label(app: &App) -> &str {
+    app.locale
+        .language_key()
+        .map(|key| app.t(key))
+        .unwrap_or_else(|| app.locale.code())
 }

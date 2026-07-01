@@ -25,11 +25,15 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
                 app.advance_onboarding();
             } else if app.page == Page::Dashboard {
                 app.confirm_window_picker();
+            } else if app.page == Page::Search {
+                app.open_selected_details();
             }
         }
         _ => match app.page {
             Page::Onboarding => handle_onboarding_key(app, key_code),
             Page::Dashboard => handle_dashboard_key(app, key_code, modifiers),
+            Page::Search => handle_search_key(app, key_code),
+            Page::Details => {}
         },
     }
 }
@@ -95,8 +99,21 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         (KeyCode::Char('s'), false) => app.begin_split_command(),
         (KeyCode::Char('a'), false) => app.add_panel(),
         (KeyCode::Char('c'), false) => app.change_focused_panel_content(),
+        (KeyCode::Char('g'), false) => app.toggle_locale(),
+        (KeyCode::Char('/'), false) => app.open_search(),
         (KeyCode::Char('x'), false) => app.close_focused_panel(),
         (KeyCode::Char('r'), false) => app.reset_dashboard(),
+        _ => {}
+    }
+}
+
+fn handle_search_key(app: &mut App, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Tab | KeyCode::BackTab => app.toggle_search_asset_kind(),
+        KeyCode::Up | KeyCode::Char('k') => app.move_search_selection(SelectionDirection::Previous),
+        KeyCode::Down | KeyCode::Char('j') => app.move_search_selection(SelectionDirection::Next),
+        KeyCode::Backspace => app.pop_search_char(),
+        KeyCode::Char(character) => app.push_search_char(character),
         _ => {}
     }
 }

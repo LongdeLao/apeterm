@@ -5,4 +5,5 @@ pub mod news;
 pub mod notes;
 pub mod onboarding;
 pub mod panel;
+pub mod search;
 pub mod watchlist;
