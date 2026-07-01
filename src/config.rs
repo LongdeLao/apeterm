@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     env, fs, io,
     path::{Path, PathBuf},
 };
@@ -41,6 +42,8 @@ pub struct WatchlistConfig {
     pub crypto_symbols: Vec<String>,
     #[serde(default = "default_stock_symbols")]
     pub stock_symbols: Vec<String>,
+    #[serde(default)]
+    pub display_names: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +158,7 @@ impl Default for WatchlistConfig {
         Self {
             crypto_symbols: default_crypto_symbols(),
             stock_symbols: default_stock_symbols(),
+            display_names: HashMap::new(),
         }
     }
 }
@@ -223,10 +227,12 @@ fn default_crypto_symbols() -> Vec<String> {
 }
 
 fn default_stock_symbols() -> Vec<String> {
-    ["AMZN", "AAPL", "META", "MSFT", "NVDA"]
-        .into_iter()
-        .map(str::to_string)
-        .collect()
+    [
+        "SPY", "QQQ", "NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "TSLA", "JPM",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
 
 fn default_metadata_requests_per_minute() -> u32 {

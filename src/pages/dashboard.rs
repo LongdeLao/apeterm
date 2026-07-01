@@ -11,15 +11,17 @@ use crate::{
     i18n::Key,
     pages::{calendar, fill::Fill, news, notes, watchlist},
     theme::current_theme,
+    ui,
 };
 
 pub fn render(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
+    let area = ui::content_area(frame.area());
     if let Some(background) = theme.background {
-        frame.render_widget(Fill::new(background), frame.area());
+        frame.render_widget(Fill::new(background), area);
     }
 
-    let geometry = dashboard_geometry(frame.area(), app);
+    let geometry = dashboard_geometry(area, app);
 
     render_panel(frame, app, geometry.news, PanelId::News);
     render_panel(frame, app, geometry.watchlist, PanelId::Watchlist);

@@ -43,14 +43,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     let symbol_width = SYMBOL_WIDTH.max(app.i18n.width(Key::WatchlistSectionStocks));
 
     let mut lines = Vec::new();
-    if app.watchlist_editor.is_some() {
-        lines.push(Line::from(Span::styled(
-            app.t(Key::WatchlistEditHelp),
-            Style::default().fg(theme.muted),
-        )));
-        lines.push(Line::from(""));
-    }
-
     lines.push(stocks_title(
         app,
         app.stock_market_session,
@@ -165,7 +157,7 @@ fn push_watchlist_rows<'a>(
         lines.push(symbol_line(
             app,
             row,
-            symbol,
+            app.watchlist_display_name(symbol).unwrap_or(symbol),
             quote,
             foreground,
             muted,
@@ -192,7 +184,7 @@ fn edit_action_line<'a>(app: &'a App, row: WatchlistEditRow, label: &'a str) -> 
 fn symbol_line<'a>(
     app: &'a App,
     row: WatchlistEditRow,
-    symbol: &'a str,
+    display_symbol: &'a str,
     quote: Option<&'a Quote>,
     foreground: Color,
     muted: Color,
@@ -219,6 +211,7 @@ fn symbol_line<'a>(
         quote_line(
             prefix,
             quote,
+            display_symbol,
             base_style,
             selected,
             foreground,
@@ -226,7 +219,10 @@ fn symbol_line<'a>(
         )
     } else {
         Line::from(vec![
-            Span::styled(format!("{prefix}{symbol:<symbol_width$}"), base_style),
+            Span::styled(
+                format!("{prefix}{display_symbol:<symbol_width$}"),
+                base_style,
+            ),
             Span::styled(
                 app.t(Key::WatchlistStatusLoadingQuote),
                 Style::default().fg(muted),
@@ -243,6 +239,7 @@ fn pad_right(value: &str, width: usize) -> String {
 fn quote_line<'a>(
     prefix: &str,
     quote: &'a Quote,
+    display_symbol: &'a str,
     base_style: Style,
     selected: bool,
     foreground: Color,
@@ -284,7 +281,7 @@ fn quote_line<'a>(
     };
     Line::from(vec![
         Span::styled(
-            format!("{prefix}{:<symbol_width$}", quote.symbol),
+            format!("{prefix}{:<symbol_width$}", display_symbol),
             symbol_style,
         ),
         Span::styled(format!("{arrow} "), style),
@@ -322,23 +319,43 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
             kind: WatchlistKind::Crypto,
             input,
         } => (app.t(Key::WatchlistEditInputCrypto), input.as_str()),
-        WatchlistEditMode::Rename { input, .. } => {
+        WatchlistEditMode::EditAlias { input, .. } => {
             (app.t(Key::WatchlistEditInputRename), input.as_str())
         }
+        WatchlistEditMode::ChangeTicker { input, .. } => {
+            (app.t(Key::WatchlistEditInputTicker), input.as_str())
+        }
     };
-    let modal = centered_rect(area, 42, 5);
+    let suggestion_count = app.watchlist_suggestions.len().min(6) as u16;
+    let modal = centered_rect(area, 62, 3 + suggestion_count);
     let label_text = format!("{label}: ");
-    let lines = vec![
-        Line::from(Span::styled(
-            app.t(Key::WatchlistEditHelp),
-            Style::default().fg(theme.muted),
-        )),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled(label_text.as_str(), Style::default().fg(theme.muted)),
-            Span::styled(input, Style::default().fg(theme.foreground)),
-        ]),
-    ];
+    let mut lines = vec![Line::from(vec![
+        Span::styled(
+            label_text.as_str(),
+            Style::default()
+                .fg(theme.foreground)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(input, Style::default().fg(theme.foreground)),
+    ])];
+
+    for (index, suggestion) in app.watchlist_suggestions.iter().take(6).enumerate() {
+        let selected = index == app.watchlist_suggestion_selection;
+        let style = if selected {
+            Style::default()
+                .fg(Color::Black)
+                .bg(theme.accent)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.foreground)
+        };
+        let marker = if selected { ">" } else { " " };
+        lines.push(Line::from(vec![
+            Span::styled(format!("{marker} {:<8}", suggestion.symbol), style),
+            Span::styled(format!(" {}", suggestion.name), style),
+        ]));
+    }
+
     let panel = Paragraph::new(lines)
         .style(Style::default().bg(background))
         .block(
@@ -354,7 +371,7 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
         modal
             .x
             .saturating_add(1 + label_text.len() as u16 + input.len() as u16),
-        modal.y.saturating_add(3),
+        modal.y.saturating_add(1),
     ));
 }
 

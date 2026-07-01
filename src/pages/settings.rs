@@ -11,15 +11,16 @@ use crate::{
     i18n::{Key, Locale},
     pages::fill::Fill,
     theme::current_theme,
+    ui,
 };
 
 pub fn render(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
+    let area = ui::content_area(frame.area());
     if let Some(background) = theme.background {
-        frame.render_widget(Fill::new(background), frame.area());
+        frame.render_widget(Fill::new(background), area);
     }
 
-    let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -43,12 +44,6 @@ pub fn render(frame: &mut Frame, app: &App) {
     frame.render_widget(title, chunks[0]);
 
     render_rows(frame, app, chunks[1]);
-
-    frame.render_widget(
-        Paragraph::new(app.t(Key::SettingsFooter)).style(Style::default().fg(theme.muted)),
-        chunks[2],
-    );
-
     if app.reset_confirmation.is_some() {
         render_reset_confirmation(frame, app);
     }
@@ -139,7 +134,7 @@ fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String)> {
 fn render_reset_confirmation(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
     let background = theme.background.unwrap_or(Color::Black);
-    let area = centered_rect(frame.area(), 64, 9);
+    let area = centered_rect(ui::content_area(frame.area()), 64, 9);
     let input = app
         .reset_confirmation
         .as_ref()

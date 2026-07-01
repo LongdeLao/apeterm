@@ -16,6 +16,14 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
 
     match key_code {
         KeyCode::Char('q') if is_control => app.should_quit = true,
+        KeyCode::Char('q')
+            if !is_control
+                && !app.is_editing_watchlist()
+                && app.page != Page::Search
+                && (app.page != Page::Settings || app.reset_confirmation.is_none()) =>
+        {
+            app.should_quit = true
+        }
         KeyCode::Esc => app.close_help(),
         KeyCode::Char('?') => {
             if app.page == Page::Dashboard {
@@ -161,6 +169,8 @@ fn handle_watchlist_edit_key(app: &mut App, key_code: KeyCode) {
         .is_some_and(|editor| editor.mode.is_some())
     {
         match key_code {
+            KeyCode::Up => app.move_watchlist_suggestion(SelectionDirection::Previous),
+            KeyCode::Down => app.move_watchlist_suggestion(SelectionDirection::Next),
             KeyCode::Backspace => app.pop_watchlist_input_char(),
             KeyCode::Char(character) => app.push_watchlist_input_char(character),
             _ => {}
@@ -177,6 +187,7 @@ fn handle_watchlist_edit_key(app: &mut App, key_code: KeyCode) {
         }
         KeyCode::Char('a') => app.begin_watchlist_add(WatchlistKind::Stock),
         KeyCode::Char('c') => app.begin_watchlist_add(WatchlistKind::Crypto),
+        KeyCode::Char('t') => app.begin_selected_watchlist_ticker_change(),
         KeyCode::Char('d') => app.delete_selected_watchlist_symbol(),
         _ => {}
     }

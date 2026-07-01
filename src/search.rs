@@ -60,15 +60,45 @@ pub fn search(
     asset_type: &str,
     limit: usize,
 ) -> Result<Vec<SearchResult>> {
+    search_assets(connection, query, &[asset_type], limit)
+}
+
+pub fn search_assets(
+    connection: &Connection,
+    query: &str,
+    asset_types: &[&str],
+    limit: usize,
+) -> Result<Vec<SearchResult>> {
     let query = query.trim();
-    if query.is_empty() {
-        return popular(connection, asset_type, limit);
+    if asset_types.is_empty() || limit == 0 {
+        return Ok(Vec::new());
     }
 
-    let mut results = fts_prefix_search(connection, query, asset_type, limit)?;
-    if results.len() < limit.min(5) {
-        merge_fuzzy_results(connection, query, asset_type, limit, &mut results)?;
+    let per_asset_limit = limit.max(6);
+    let mut results: Vec<SearchResult> = Vec::new();
+
+    for asset_type in asset_types {
+        let mut asset_results = if query.is_empty() {
+            popular(connection, asset_type, per_asset_limit)?
+        } else {
+            let mut matches = fts_prefix_search(connection, query, asset_type, per_asset_limit)?;
+            if matches.len() < per_asset_limit.min(5) {
+                merge_fuzzy_results(connection, query, asset_type, per_asset_limit, &mut matches)?;
+            }
+            matches
+        };
+
+        for result in asset_results.drain(..) {
+            if !results
+                .iter()
+                .any(|existing| existing.symbol == result.symbol)
+            {
+                results.push(result);
+            }
+        }
     }
+
+    sort_results_for_query(query, &mut results);
     results.truncate(limit);
     Ok(results)
 }
@@ -237,6 +267,25 @@ fn read_search_result(row: &rusqlite::Row<'_>) -> Result<SearchResult> {
     })
 }
 
+fn sort_results_for_query(query: &str, results: &mut [SearchResult]) {
+    let normalized = query.trim().to_ascii_uppercase();
+    results.sort_by(|left, right| {
+        exact_symbol_match(right, &normalized)
+            .cmp(&exact_symbol_match(left, &normalized))
+            .then_with(|| {
+                left.rank
+                    .partial_cmp(&right.rank)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| left.symbol.len().cmp(&right.symbol.len()))
+            .then_with(|| left.symbol.cmp(&right.symbol))
+    });
+}
+
+fn exact_symbol_match(result: &SearchResult, query: &str) -> bool {
+    !query.is_empty() && result.symbol.eq_ignore_ascii_case(query)
+}
+
 fn fts_match_query(query: &str) -> Option<String> {
     let terms: Vec<String> = query
         .split_whitespace()
@@ -302,5 +351,47 @@ mod tests {
         let rows = search(&connection, "nvdia", "stock", 5).unwrap();
 
         assert_eq!(rows[0].symbol, "NVDA");
+    }
+
+    #[test]
+    fn exact_symbol_matches_rank_first() {
+        let connection = db::open_memory().unwrap();
+        connection
+            .execute(
+                "INSERT INTO instruments(symbol, name, asset_type, sector, industry, active) VALUES (?1, ?2, 'stock', ?3, ?4, 1)",
+                params!["MRVI", "Maravai LifeSciences Holdings, Inc.", "Life Sciences", "Pharmaceutical Preparations"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO instruments(symbol, name, asset_type, sector, industry, active) VALUES (?1, ?2, 'stock', ?3, ?4, 1)",
+                params!["MRVL", "Marvell Technology, Inc.", "Manufacturing", "Semiconductors & Related Devices"],
+            )
+            .unwrap();
+
+        let rows = search(&connection, "mrvl", "stock", 5).unwrap();
+
+        assert_eq!(rows[0].symbol, "MRVL");
+    }
+
+    #[test]
+    fn can_search_across_asset_types() {
+        let connection = db::open_memory().unwrap();
+        connection
+            .execute(
+                "INSERT INTO instruments(symbol, name, asset_type, sector, industry, active) VALUES (?1, ?2, 'stock', ?3, ?4, 1)",
+                params!["MRVL", "Marvell Technology, Inc.", "Manufacturing", "Semiconductors & Related Devices"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO instruments(symbol, name, asset_type, sector, industry, active) VALUES (?1, ?2, 'etf', ?3, ?4, 1)",
+                params!["XLC", "Communication Services Select Sector SPDR Fund", "ETF", "Sector"],
+            )
+            .unwrap();
+
+        let rows = search_assets(&connection, "mrvl", &["stock", "etf"], 5).unwrap();
+
+        assert_eq!(rows[0].symbol, "MRVL");
     }
 }

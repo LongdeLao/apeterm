@@ -113,7 +113,11 @@ pub enum WatchlistEditMode {
         kind: WatchlistKind,
         input: String,
     },
-    Rename {
+    EditAlias {
+        symbol: String,
+        input: String,
+    },
+    ChangeTicker {
         kind: WatchlistKind,
         index: usize,
         input: String,
@@ -174,6 +178,9 @@ pub struct App {
     pub settings_selection: usize,
     pub reset_confirmation: Option<TextInput>,
     pub watchlist_editor: Option<WatchlistEditor>,
+    pub watchlist_suggestions: Vec<SearchResult>,
+    pub watchlist_suggestion_selection: usize,
+    pub market_refresh_requested: bool,
     config: AppConfig,
 }
 
@@ -226,6 +233,9 @@ impl App {
             settings_selection: 0,
             reset_confirmation: None,
             watchlist_editor: None,
+            watchlist_suggestions: Vec::new(),
+            watchlist_suggestion_selection: 0,
+            market_refresh_requested: false,
             config,
         }
     }
@@ -283,6 +293,12 @@ impl App {
             &mut self.stock_market_session,
             event,
         );
+    }
+
+    pub fn take_market_refresh_request(&mut self) -> bool {
+        let requested = self.market_refresh_requested;
+        self.market_refresh_requested = false;
+        requested
     }
 
     pub fn focus_panel(&mut self, panel_id: PanelId) {
@@ -672,6 +688,15 @@ impl App {
         &self.config.watchlist.crypto_symbols
     }
 
+    pub fn watchlist_display_name(&self, symbol: &str) -> Option<&str> {
+        self.config
+            .watchlist
+            .display_names
+            .get(symbol)
+            .map(String::as_str)
+            .filter(|name| !name.trim().is_empty())
+    }
+
     pub fn selected_settings_item(&self) -> SettingsItem {
         SettingsItem::ALL[self.settings_selection.min(SettingsItem::ALL.len() - 1)]
     }
@@ -805,10 +830,10 @@ impl App {
             Some(WatchlistEditRow::AddStock) => self.begin_watchlist_add(WatchlistKind::Stock),
             Some(WatchlistEditRow::AddCrypto) => self.begin_watchlist_add(WatchlistKind::Crypto),
             Some(WatchlistEditRow::Stock(index)) => {
-                self.begin_watchlist_rename(WatchlistKind::Stock, index)
+                self.begin_watchlist_alias_edit(WatchlistKind::Stock, index)
             }
             Some(WatchlistEditRow::Crypto(index)) => {
-                self.begin_watchlist_rename(WatchlistKind::Crypto, index)
+                self.begin_watchlist_alias_edit(WatchlistKind::Crypto, index)
             }
             None => {}
         }
@@ -829,8 +854,10 @@ impl App {
             _ => return,
         }
 
+        self.cleanup_watchlist_aliases();
         self.clamp_watchlist_selection();
         self.retain_configured_quotes();
+        self.request_market_refresh();
         let _ = self.config.save();
     }
 
@@ -841,6 +868,7 @@ impl App {
                 input: String::new(),
             });
         }
+        self.refresh_watchlist_suggestions();
     }
 
     pub fn push_watchlist_input_char(&mut self, character: char) {
@@ -854,9 +882,11 @@ impl App {
             .and_then(|editor| editor.mode.as_mut())
         {
             Some(WatchlistEditMode::Add { input, .. })
-            | Some(WatchlistEditMode::Rename { input, .. }) => input.push(character),
+            | Some(WatchlistEditMode::EditAlias { input, .. })
+            | Some(WatchlistEditMode::ChangeTicker { input, .. }) => input.push(character),
             None => {}
         }
+        self.refresh_watchlist_suggestions();
     }
 
     pub fn pop_watchlist_input_char(&mut self) {
@@ -866,14 +896,47 @@ impl App {
             .and_then(|editor| editor.mode.as_mut())
         {
             Some(WatchlistEditMode::Add { input, .. })
-            | Some(WatchlistEditMode::Rename { input, .. }) => {
+            | Some(WatchlistEditMode::EditAlias { input, .. })
+            | Some(WatchlistEditMode::ChangeTicker { input, .. }) => {
                 input.pop();
             }
             None => {}
         }
+        self.refresh_watchlist_suggestions();
     }
 
-    fn begin_watchlist_rename(&mut self, kind: WatchlistKind, index: usize) {
+    fn begin_watchlist_alias_edit(&mut self, kind: WatchlistKind, index: usize) {
+        let symbol = match kind {
+            WatchlistKind::Stock => self.config.watchlist.stock_symbols.get(index),
+            WatchlistKind::Crypto => self.config.watchlist.crypto_symbols.get(index),
+        }
+        .cloned()
+        .unwrap_or_default();
+        let input = self
+            .watchlist_display_name(&symbol)
+            .unwrap_or(symbol.as_str())
+            .to_string();
+
+        if let Some(editor) = &mut self.watchlist_editor {
+            editor.mode = Some(WatchlistEditMode::EditAlias { symbol, input });
+        }
+        self.watchlist_suggestions.clear();
+        self.watchlist_suggestion_selection = 0;
+    }
+
+    pub fn begin_selected_watchlist_ticker_change(&mut self) {
+        match self.selected_watchlist_row() {
+            Some(WatchlistEditRow::Stock(index)) => {
+                self.begin_watchlist_ticker_change(WatchlistKind::Stock, index)
+            }
+            Some(WatchlistEditRow::Crypto(index)) => {
+                self.begin_watchlist_ticker_change(WatchlistKind::Crypto, index)
+            }
+            _ => {}
+        }
+    }
+
+    fn begin_watchlist_ticker_change(&mut self, kind: WatchlistKind, index: usize) {
         let input = match kind {
             WatchlistKind::Stock => self.config.watchlist.stock_symbols.get(index),
             WatchlistKind::Crypto => self.config.watchlist.crypto_symbols.get(index),
@@ -882,8 +945,29 @@ impl App {
         .unwrap_or_default();
 
         if let Some(editor) = &mut self.watchlist_editor {
-            editor.mode = Some(WatchlistEditMode::Rename { kind, index, input });
+            editor.mode = Some(WatchlistEditMode::ChangeTicker { kind, index, input });
         }
+        self.refresh_watchlist_suggestions();
+    }
+
+    pub fn move_watchlist_suggestion(&mut self, direction: SelectionDirection) {
+        if self.watchlist_suggestions.is_empty() {
+            self.watchlist_suggestion_selection = 0;
+            return;
+        }
+
+        self.watchlist_suggestion_selection = match direction {
+            SelectionDirection::Previous => self.watchlist_suggestion_selection.saturating_sub(1),
+            SelectionDirection::Next => (self.watchlist_suggestion_selection + 1)
+                .min(self.watchlist_suggestions.len().saturating_sub(1)),
+        };
+    }
+
+    fn selected_watchlist_input_symbol(&self, input: &str) -> Option<String> {
+        self.watchlist_suggestions
+            .get(self.watchlist_suggestion_selection)
+            .map(|suggestion| suggestion.symbol.clone())
+            .or_else(|| normalize_symbol(input))
     }
 
     fn save_watchlist_input(&mut self) {
@@ -897,18 +981,38 @@ impl App {
 
         match mode {
             WatchlistEditMode::Add { kind, input } => {
-                if let Some(symbol) = normalize_symbol(&input) {
+                if let Some(symbol) = self.selected_watchlist_input_symbol(&input) {
                     let list = self.watchlist_mut(kind);
                     if !list.contains(&symbol) {
                         list.push(symbol);
                     }
                 }
             }
-            WatchlistEditMode::Rename { kind, index, input } => {
-                if let Some(symbol) = normalize_symbol(&input) {
-                    let list = self.watchlist_mut(kind);
-                    if index < list.len() {
-                        list[index] = symbol;
+            WatchlistEditMode::EditAlias { symbol, input } => {
+                let alias = input.trim();
+                if alias.is_empty() || alias.eq_ignore_ascii_case(&symbol) {
+                    self.config.watchlist.display_names.remove(&symbol);
+                } else {
+                    self.config
+                        .watchlist
+                        .display_names
+                        .insert(symbol, alias.to_string());
+                }
+            }
+            WatchlistEditMode::ChangeTicker { kind, index, input } => {
+                if let Some(symbol) = self.selected_watchlist_input_symbol(&input) {
+                    let alias_migration = {
+                        let list = self.watchlist_mut(kind);
+                        if index < list.len() {
+                            let old_symbol = std::mem::replace(&mut list[index], symbol);
+                            let new_symbol = list[index].clone();
+                            Some((old_symbol, new_symbol))
+                        } else {
+                            None
+                        }
+                    };
+                    if let Some((old_symbol, new_symbol)) = alias_migration {
+                        self.migrate_watchlist_alias(&old_symbol, &new_symbol);
                     }
                 }
             }
@@ -918,8 +1022,12 @@ impl App {
         self.config.watchlist.stock_symbols.dedup();
         self.config.watchlist.crypto_symbols.sort();
         self.config.watchlist.crypto_symbols.dedup();
+        self.cleanup_watchlist_aliases();
         self.retain_configured_quotes();
         self.clamp_watchlist_selection();
+        self.watchlist_suggestions.clear();
+        self.watchlist_suggestion_selection = 0;
+        self.request_market_refresh();
         let _ = self.config.save();
     }
 
@@ -935,6 +1043,76 @@ impl App {
             .retain(|quote| self.config.watchlist.stock_symbols.contains(&quote.symbol));
         self.crypto_quotes
             .retain(|quote| self.config.watchlist.crypto_symbols.contains(&quote.symbol));
+    }
+
+    fn refresh_watchlist_suggestions(&mut self) {
+        let Some(mode) = self
+            .watchlist_editor
+            .as_ref()
+            .and_then(|editor| editor.mode.as_ref())
+        else {
+            self.watchlist_suggestions.clear();
+            self.watchlist_suggestion_selection = 0;
+            return;
+        };
+
+        let (kind, input) = match mode {
+            WatchlistEditMode::Add { kind, input }
+            | WatchlistEditMode::ChangeTicker { kind, input, .. } => (*kind, input.as_str()),
+            WatchlistEditMode::EditAlias { .. } => {
+                self.watchlist_suggestions.clear();
+                self.watchlist_suggestion_selection = 0;
+                return;
+            }
+        };
+
+        if kind != WatchlistKind::Stock {
+            self.watchlist_suggestions.clear();
+            self.watchlist_suggestion_selection = 0;
+            return;
+        }
+
+        match crate::db::open(&self.ticker_db_path)
+            .and_then(|connection| search::search_assets(&connection, input, &["stock", "etf"], 6))
+        {
+            Ok(results) => {
+                self.watchlist_suggestions = results;
+                self.watchlist_suggestion_selection = self
+                    .watchlist_suggestion_selection
+                    .min(self.watchlist_suggestions.len().saturating_sub(1));
+            }
+            Err(_) => {
+                self.watchlist_suggestions.clear();
+                self.watchlist_suggestion_selection = 0;
+            }
+        }
+    }
+
+    fn migrate_watchlist_alias(&mut self, old_symbol: &str, new_symbol: &str) {
+        if old_symbol == new_symbol {
+            return;
+        }
+
+        if let Some(alias) = self.config.watchlist.display_names.remove(old_symbol) {
+            self.config
+                .watchlist
+                .display_names
+                .entry(new_symbol.to_string())
+                .or_insert(alias);
+        }
+    }
+
+    fn cleanup_watchlist_aliases(&mut self) {
+        let stock_symbols = &self.config.watchlist.stock_symbols;
+        let crypto_symbols = &self.config.watchlist.crypto_symbols;
+        self.config
+            .watchlist
+            .display_names
+            .retain(|symbol, _| stock_symbols.contains(symbol) || crypto_symbols.contains(symbol));
+    }
+
+    fn request_market_refresh(&mut self) {
+        self.market_refresh_requested = true;
     }
 
     fn clamp_watchlist_selection(&mut self) {

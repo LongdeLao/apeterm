@@ -28,6 +28,8 @@ pub enum Key {
     PanelTitleNotes,
     #[strum(serialize = "panel.title.picker")]
     PanelTitlePicker,
+    #[strum(serialize = "app.footer")]
+    AppFooter,
     #[strum(serialize = "dashboard.help.title")]
     DashboardHelpTitle,
     #[strum(serialize = "dashboard.help.title_split")]
@@ -80,6 +82,10 @@ pub enum Key {
     WatchlistMarketPending,
     #[strum(serialize = "watchlist.edit.help")]
     WatchlistEditHelp,
+    #[strum(serialize = "watchlist.edit.input_footer")]
+    WatchlistEditInputFooter,
+    #[strum(serialize = "watchlist.footer.edit")]
+    WatchlistFooterEdit,
     #[strum(serialize = "watchlist.edit.add_stock")]
     WatchlistEditAddStock,
     #[strum(serialize = "watchlist.edit.add_crypto")]
@@ -90,6 +96,8 @@ pub enum Key {
     WatchlistEditInputCrypto,
     #[strum(serialize = "watchlist.edit.input_rename")]
     WatchlistEditInputRename,
+    #[strum(serialize = "watchlist.edit.input_ticker")]
+    WatchlistEditInputTicker,
     #[strum(serialize = "watchlist.market.pre_market")]
     WatchlistMarketPreMarket,
     #[strum(serialize = "watchlist.market.regular")]

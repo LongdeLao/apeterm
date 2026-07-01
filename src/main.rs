@@ -57,12 +57,14 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     terminal.clear()?;
 
     let mut app = App::new(config.clone());
-    let market_events = market::spawn_market_streams(
+    let (market_sender, market_events) = market::market_channel();
+    market::spawn_market_streams(
+        market_sender.clone(),
         config.watchlist.crypto_symbols.clone(),
         config.watchlist.stock_symbols.clone(),
     );
 
-    let result = run_app(&mut terminal, &mut app, market_events);
+    let result = run_app(&mut terminal, &mut app, market_sender, market_events);
 
     execute!(
         terminal.backend_mut(),
@@ -80,11 +82,19 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
+    market_sender: std::sync::mpsc::Sender<market::MarketEvent>,
     market_events: std::sync::mpsc::Receiver<market::MarketEvent>,
 ) -> io::Result<()> {
     while !app.should_quit {
         while let Ok(event) = market_events.try_recv() {
             app.handle_market_event(event);
+        }
+        if app.take_market_refresh_request() {
+            market::spawn_market_streams(
+                market_sender.clone(),
+                app.crypto_watchlist().to_vec(),
+                app.stock_watchlist().to_vec(),
+            );
         }
         app.poll_live_details();
 

@@ -10,16 +10,18 @@ use crate::{
     app::{App, OnboardingStep, ThemeName},
     i18n::{Key, Locale},
     theme::current_theme,
+    ui,
 };
 
 const LOGO: &str = "／三ヽ\n(6( ･ ･|)\n|　( ┴)\n\napeterm";
 
 pub fn render(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
+    let area = ui::content_area(frame.area());
     if let Some(background) = theme.background {
         frame.render_widget(
             Block::default().style(Style::default().bg(background)),
-            frame.area(),
+            area,
         );
     }
 
@@ -32,7 +34,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 fn render_welcome(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
-    let chunks = welcome_chunks(frame.area());
+    let chunks = welcome_chunks(ui::content_area(frame.area()));
 
     let logo = Paragraph::new(LOGO)
         .alignment(Alignment::Center)
@@ -81,7 +83,7 @@ fn render_theme(frame: &mut Frame, app: &App) {
 
 fn render_menu(frame: &mut Frame, app: &App, title: &str, options: &[(String, bool)]) {
     let theme = current_theme(app.theme_name);
-    let chunks = menu_chunks(frame.area(), options.len() as u16);
+    let chunks = menu_chunks(ui::content_area(frame.area()), options.len() as u16);
 
     let title = Paragraph::new(title)
         .alignment(Alignment::Center)

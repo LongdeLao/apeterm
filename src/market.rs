@@ -35,16 +35,17 @@ pub enum MarketSession {
     AfterHours,
 }
 
+pub fn market_channel() -> (Sender<MarketEvent>, Receiver<MarketEvent>) {
+    mpsc::channel()
+}
+
 pub fn spawn_market_streams(
+    sender: Sender<MarketEvent>,
     crypto_symbols: Vec<String>,
     stock_symbols: Vec<String>,
-) -> Receiver<MarketEvent> {
-    let (sender, receiver) = mpsc::channel();
-
+) {
     spawn_binance_stream(sender.clone(), crypto_symbols);
     spawn_yfinance_stream(sender, stock_symbols);
-
-    receiver
 }
 
 fn spawn_binance_stream(sender: Sender<MarketEvent>, symbols: Vec<String>) {

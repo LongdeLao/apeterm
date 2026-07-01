@@ -13,15 +13,16 @@ use crate::{
     pages::fill::Fill,
     search::LiveInstrumentDetails,
     theme::current_theme,
+    ui,
 };
 
 pub fn render(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
+    let area = ui::content_area(frame.area());
     if let Some(background) = theme.background {
-        frame.render_widget(Fill::new(background), frame.area());
+        frame.render_widget(Fill::new(background), area);
     }
 
-    let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -53,10 +54,6 @@ pub fn render(frame: &mut Frame, app: &App) {
                 theme.foreground,
                 theme.muted,
             ),
-            Span::styled(
-                app.t(Key::SearchHelpTabSwitches),
-                Style::default().fg(theme.muted),
-            ),
         ]),
     ])
     .block(
@@ -82,18 +79,13 @@ pub fn render(frame: &mut Frame, app: &App) {
     } else {
         render_results(frame, app, chunks[1]);
     }
-
-    frame.render_widget(
-        Paragraph::new(app.t(Key::SearchFooter)).style(Style::default().fg(theme.muted)),
-        chunks[2],
-    );
 }
 
 pub fn render_details(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
     render(frame, app);
 
-    let area = centered_percent_rect(frame.area(), 88, 78);
+    let area = centered_percent_rect(ui::content_area(frame.area()), 88, 78);
     let Some(details) = &app.selected_details else {
         return;
     };
