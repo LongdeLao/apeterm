@@ -99,6 +99,14 @@ pub struct NewsConfig {
     pub feeds: Vec<String>,
     #[serde(default = "default_news_fetch_on_startup")]
     pub fetch_on_startup: bool,
+    #[serde(default = "default_enable_rss")]
+    pub enable_rss: bool,
+    #[serde(default = "default_enable_financial_juice")]
+    pub enable_financial_juice: bool,
+    #[serde(default = "default_enable_nasdaq")]
+    pub enable_nasdaq: bool,
+    #[serde(default = "default_news_refresh_interval_seconds")]
+    pub refresh_interval_seconds: u64,
 }
 
 impl AppConfig {
@@ -236,6 +244,10 @@ impl Default for NewsConfig {
         Self {
             feeds: default_news_feeds(),
             fetch_on_startup: default_news_fetch_on_startup(),
+            enable_rss: default_enable_rss(),
+            enable_financial_juice: default_enable_financial_juice(),
+            enable_nasdaq: default_enable_nasdaq(),
+            refresh_interval_seconds: default_news_refresh_interval_seconds(),
         }
     }
 }
@@ -318,15 +330,36 @@ fn default_llm_model() -> String {
 
 fn default_news_feeds() -> Vec<String> {
     vec![
-        "https://feeds.content.dowjones.io/public/rss/mw_topstories".to_string(),
-        "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines".to_string(),
-        "https://feeds.marketwatch.com/marketwatch/bulletins".to_string(),
-        "https://feeds.content.dowjones.io/public/rss/mw_marketpulse".to_string(),
+        "https://news.google.com/rss/search?q=markets&hl=en-US&gl=US&ceid=US:en".to_string(),
+        "https://news.google.com/rss/search?q=stocks&hl=en-US&gl=US&ceid=US:en".to_string(),
+        "https://news.google.com/rss/search?q=economy&hl=en-US&gl=US&ceid=US:en".to_string(),
+        "https://news.google.com/rss/search?q=earnings&hl=en-US&gl=US&ceid=US:en".to_string(),
+        "https://news.google.com/rss/search?q=%22Federal+Reserve%22&hl=en-US&gl=US&ceid=US:en".to_string(),
+        "https://news.google.com/rss/search?q=ECB&hl=en-US&gl=US&ceid=US:en".to_string(),
+        "https://news.google.com/rss/search?q=site%3Abloomberg.com+markets&hl=en-US&gl=US&ceid=US:en".to_string(),
+        "https://news.google.com/rss/search?q=site%3Awsj.com+markets&hl=en-US&gl=US&ceid=US:en".to_string(),
+        "https://news.google.com/rss/search?q=site%3Aft.com+markets&hl=en-US&gl=US&ceid=US:en".to_string(),
     ]
 }
 
 fn default_news_fetch_on_startup() -> bool {
     true
+}
+
+fn default_enable_rss() -> bool {
+    true
+}
+
+fn default_enable_financial_juice() -> bool {
+    true
+}
+
+fn default_enable_nasdaq() -> bool {
+    true
+}
+
+fn default_news_refresh_interval_seconds() -> u64 {
+    60
 }
 
 #[cfg(test)]
@@ -357,5 +390,9 @@ mod tests {
         assert!(!config.onboarding.completed);
         assert_eq!(config.metadata_provider.requests_per_minute, 600);
         assert_eq!(config.update.enrich_max_age_hours, 24);
+        assert!(config.news.enable_rss);
+        assert!(config.news.enable_financial_juice);
+        assert!(config.news.enable_nasdaq);
+        assert_eq!(config.news.refresh_interval_seconds, 60);
     }
 }

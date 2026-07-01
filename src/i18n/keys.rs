@@ -118,6 +118,10 @@ pub enum Key {
     CalendarEmpty,
     #[strum(serialize = "news.empty")]
     NewsEmpty,
+    #[strum(serialize = "news.empty.watchlist_config")]
+    NewsEmptyWatchlistConfig,
+    #[strum(serialize = "news.empty.watchlist_matches")]
+    NewsEmptyWatchlistMatches,
     #[strum(serialize = "news.footer")]
     NewsFooter,
     #[strum(serialize = "news.status.loading")]
@@ -138,6 +142,10 @@ pub enum Key {
     NewsDetailAuthor,
     #[strum(serialize = "news.detail.published")]
     NewsDetailPublished,
+    #[strum(serialize = "news.detail.priority")]
+    NewsDetailPriority,
+    #[strum(serialize = "news.detail.symbols")]
+    NewsDetailSymbols,
     #[strum(serialize = "news.detail.link")]
     NewsDetailLink,
     #[strum(serialize = "news.detail.summary")]

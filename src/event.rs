@@ -158,6 +158,14 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
 
 fn handle_news_key(app: &mut App, key_code: KeyCode) -> bool {
     match key_code {
+        KeyCode::Left => {
+            app.cycle_news_filter(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::Right => {
+            app.cycle_news_filter(SelectionDirection::Next);
+            true
+        }
         KeyCode::Up | KeyCode::Char('k') => {
             app.move_news_selection(SelectionDirection::Previous);
             true

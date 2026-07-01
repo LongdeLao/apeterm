@@ -1,7 +1,9 @@
 use std::{
+    collections::HashSet,
     path::PathBuf,
     sync::mpsc::{self, Receiver},
     thread,
+    time::{Duration, Instant},
 };
 
 use chrono::{DateTime, Local};
@@ -11,9 +13,13 @@ use crate::{
     ai::client::LlmClient,
     config::AppConfig,
     config::LlmConfig,
+    db,
     i18n::{I18n, Key, Locale},
     market::{MarketEvent, MarketSession},
-    news::{self, FeedSource, NewsItem},
+    news::{
+        self, FetchResult, NewsCategory, NewsItem, NewsPriority, NewsRuntimeConfig,
+        WatchlistMatcher,
+    },
     quotes::{Quote, update_market_quotes},
     search::{self, InstrumentDetails, LiveInstrumentDetails, SearchResult},
 };
@@ -100,6 +106,15 @@ pub enum SearchAssetKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewsFilterTab {
+    All,
+    Watchlist,
+    Macro,
+    Reddit,
+    Crypto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsItem {
     Language,
     Theme,
@@ -171,8 +186,18 @@ enum AgentEvent {
 
 #[derive(Debug)]
 enum NewsEvent {
-    Loaded(Vec<NewsItem>),
+    Loaded { result: FetchResult, done: bool },
     Error(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum NewsListRow {
+    Group {
+        symbol: String,
+        count: usize,
+        expanded: bool,
+    },
+    Item(usize),
 }
 
 #[derive(Debug)]
@@ -219,6 +244,13 @@ pub struct App {
     pub news_loading: bool,
     pub news_status: Option<String>,
     pub selected_news: Option<NewsItem>,
+    pub news_filter_tab: NewsFilterTab,
+    pub news_source_label: String,
+    pub news_connection_status: String,
+    pub news_source_counts: Vec<(String, usize)>,
+    pub collapsed_watchlist_news: HashSet<String>,
+    known_watchlist_news_symbols: HashSet<String>,
+    last_news_refresh: Option<Instant>,
     pub agent_input: String,
     pub agent_messages: Vec<AgentMessage>,
     pub agent_loading: bool,
@@ -290,6 +322,13 @@ impl App {
             news_loading: false,
             news_status: None,
             selected_news: None,
+            news_filter_tab: NewsFilterTab::All,
+            news_source_label: "news feed".to_string(),
+            news_connection_status: "connecting...".to_string(),
+            news_source_counts: Vec::new(),
+            collapsed_watchlist_news: HashSet::new(),
+            known_watchlist_news_symbols: HashSet::new(),
+            last_news_refresh: None,
             agent_input: String::new(),
             agent_messages: Vec::new(),
             agent_loading: false,
@@ -927,80 +966,143 @@ impl App {
         self.config.news.fetch_on_startup
     }
 
+    pub fn news_refresh_interval(&self) -> Duration {
+        Duration::from_secs(self.config.news.refresh_interval_seconds.max(1))
+    }
+
     pub fn refresh_news(&mut self) {
         if self.news_loading {
             return;
         }
 
-        let feed_urls = self.config.news.feeds.clone();
+        let runtime_config = NewsRuntimeConfig {
+            feeds: self.config.news.feeds.clone(),
+            stock_symbols: self.config.watchlist.stock_symbols.clone(),
+            crypto_symbols: self.config.watchlist.crypto_symbols.clone(),
+            stock_matchers: self.build_watchlist_matchers(WatchlistKind::Stock),
+            crypto_matchers: self.build_watchlist_matchers(WatchlistKind::Crypto),
+            enable_rss: self.config.news.enable_rss,
+            enable_financial_juice: self.config.news.enable_financial_juice,
+            enable_nasdaq: self.config.news.enable_nasdaq,
+        };
         self.news_loading = true;
+        self.last_news_refresh = Some(Instant::now());
         self.news_status = Some(self.t(Key::NewsStatusLoading).to_string());
+        self.news_connection_status = "reconnecting...".to_string();
 
         let (sender, receiver) = mpsc::channel();
         self.news_receiver = Some(receiver);
         thread::spawn(move || {
-            let labels = [
-                "Top Stories",
-                "Real-time Headlines",
-                "Breaking News Bulletins",
-                "Market Pulse",
-            ];
-            let owned_feeds = feed_urls
-                .iter()
-                .enumerate()
-                .map(|(index, url)| FeedSource {
-                    label: labels.get(index).copied().unwrap_or("MarketWatch"),
-                    url: url.as_str(),
-                })
-                .collect::<Vec<_>>();
-
-            match news::fetch_news(&owned_feeds) {
-                Ok(items) => {
-                    let _ = sender.send(NewsEvent::Loaded(items));
-                }
-                Err(error) => {
-                    let _ = sender.send(NewsEvent::Error(error));
-                }
+            let result = news::stream_all_news(&runtime_config, |result, done| {
+                let _ = sender.send(NewsEvent::Loaded { result, done });
+            });
+            if let Err(error) = result {
+                let _ = sender.send(NewsEvent::Error(error));
             }
         });
     }
 
     pub fn poll_news(&mut self) {
-        let Some(receiver) = &self.news_receiver else {
+        if let Some(receiver) = &self.news_receiver {
+            match receiver.try_recv() {
+                Ok(NewsEvent::Loaded { result, done }) => {
+                    let selected_id = self.selected_news.as_ref().map(|item| item.id.clone());
+                    self.news_items = result.items;
+                    self.news_source_label = result.source_label;
+                    self.news_connection_status = result.connection_status;
+                    self.news_source_counts = result.source_counts;
+                    self.sync_collapsed_watchlist_news();
+                    self.news_selection = self
+                        .news_selection
+                        .min(self.news_visible_rows().len().saturating_sub(1));
+                    self.sync_news_scroll(6);
+                    self.news_loading = !done;
+                    if done {
+                        self.news_receiver = None;
+                    }
+                    self.selected_news = selected_id
+                        .and_then(|id| self.news_items.iter().find(|item| item.id == id).cloned());
+                    self.news_status = result.status.or_else(|| {
+                        if self.news_items.is_empty() {
+                            Some(self.t(Key::NewsEmpty).to_string())
+                        } else {
+                            None
+                        }
+                    });
+                }
+                Ok(NewsEvent::Error(error)) => {
+                    self.news_loading = false;
+                    self.news_receiver = None;
+                    self.news_connection_status = "reconnecting...".to_string();
+                    self.news_status =
+                        Some(self.t(Key::NewsStatusError).replace("{error}", &error));
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.news_loading = false;
+                    self.news_receiver = None;
+                    self.news_connection_status = "reconnecting...".to_string();
+                    self.news_status = Some(self.t(Key::NewsStatusInterrupted).to_string());
+                }
+            }
+        }
+
+        self.maybe_auto_refresh_news();
+    }
+
+    fn maybe_auto_refresh_news(&mut self) {
+        if self.news_loading || !self.onboarding_complete {
+            return;
+        }
+
+        let Some(last_refresh) = self.last_news_refresh else {
+            self.refresh_news();
             return;
         };
 
-        match receiver.try_recv() {
-            Ok(NewsEvent::Loaded(items)) => {
-                self.news_items = items;
-                self.news_selection = self
-                    .news_selection
-                    .min(self.news_items.len().saturating_sub(1));
-                self.sync_news_scroll(12);
-                self.news_loading = false;
-                self.news_receiver = None;
-                self.news_status = if self.news_items.is_empty() {
-                    Some(self.t(Key::NewsEmpty).to_string())
-                } else {
-                    None
-                };
-            }
-            Ok(NewsEvent::Error(error)) => {
-                self.news_loading = false;
-                self.news_receiver = None;
-                self.news_status = Some(self.t(Key::NewsStatusError).replace("{error}", &error));
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.news_loading = false;
-                self.news_receiver = None;
-                self.news_status = Some(self.t(Key::NewsStatusInterrupted).to_string());
-            }
+        if last_refresh.elapsed() >= self.news_refresh_interval() {
+            self.refresh_news();
+        }
+    }
+
+    pub fn news_priority_label(&self, priority: NewsPriority) -> &'static str {
+        match priority {
+            NewsPriority::Critical => "critical",
+            NewsPriority::High => "high",
+            NewsPriority::Medium => "medium",
+            NewsPriority::Low => "low",
+        }
+    }
+
+    pub fn news_symbols_label(&self, symbols: &[String]) -> Option<String> {
+        if symbols.is_empty() {
+            None
+        } else {
+            Some(format!("[{}]", symbols.join(" ")))
         }
     }
 
     pub fn move_news_selection(&mut self, direction: SelectionDirection) {
-        if self.news_items.is_empty() {
+        let visible = self.news_filtered_indices();
+        if self.news_filter_tab == NewsFilterTab::Watchlist {
+            let row_count = self.news_visible_rows().len();
+            if row_count == 0 {
+                self.news_selection = 0;
+                self.news_scroll = 0;
+                return;
+            }
+
+            self.news_selection = match direction {
+                SelectionDirection::Previous => self.news_selection.saturating_sub(1),
+                SelectionDirection::Next => {
+                    (self.news_selection + 1).min(row_count.saturating_sub(1))
+                }
+            };
+            self.sync_news_scroll(6);
+            return;
+        }
+
+        if visible.is_empty() {
             self.news_selection = 0;
             self.news_scroll = 0;
             return;
@@ -1009,18 +1111,53 @@ impl App {
         self.news_selection = match direction {
             SelectionDirection::Previous => self.news_selection.saturating_sub(1),
             SelectionDirection::Next => {
-                (self.news_selection + 1).min(self.news_items.len().saturating_sub(1))
+                (self.news_selection + 1).min(visible.len().saturating_sub(1))
             }
         };
-        self.sync_news_scroll(12);
+        self.sync_news_scroll(6);
     }
 
     pub fn open_selected_news(&mut self) {
-        self.selected_news = self.news_items.get(self.news_selection).cloned();
+        if self.news_filter_tab == NewsFilterTab::Watchlist {
+            match self.news_visible_rows().get(self.news_selection) {
+                Some(NewsListRow::Group { symbol, .. }) => {
+                    if !self.collapsed_watchlist_news.remove(symbol) {
+                        self.collapsed_watchlist_news.insert(symbol.clone());
+                    }
+                    self.selected_news = None;
+                    self.sync_news_scroll(6);
+                }
+                Some(NewsListRow::Item(index)) => {
+                    self.selected_news = self.news_items.get(*index).cloned();
+                }
+                None => {
+                    self.selected_news = None;
+                }
+            }
+            return;
+        }
+
+        self.selected_news = self
+            .news_filtered_indices()
+            .get(self.news_selection)
+            .and_then(|index| self.news_items.get(*index))
+            .cloned();
     }
 
     pub fn open_selected_news_in_browser(&mut self) {
-        let Some(item) = self.news_items.get(self.news_selection) else {
+        let item = if self.news_filter_tab == NewsFilterTab::Watchlist {
+            self.news_visible_rows()
+                .get(self.news_selection)
+                .and_then(|row| match row {
+                    NewsListRow::Item(index) => self.news_items.get(*index),
+                    NewsListRow::Group { .. } => None,
+                })
+        } else {
+            self.news_filtered_indices()
+                .get(self.news_selection)
+                .and_then(|index| self.news_items.get(*index))
+        };
+        let Some(item) = item else {
             return;
         };
 
@@ -1039,6 +1176,30 @@ impl App {
     }
 
     pub fn news_timestamp(&self, timestamp: Option<DateTime<chrono::Utc>>) -> String {
+        let Some(value) = timestamp else {
+            return String::new();
+        };
+        let delta = Local::now().signed_duration_since(value.with_timezone(&Local));
+        if delta.num_minutes() < 1 {
+            "now".to_string()
+        } else if delta.num_minutes() < 60 {
+            format!("{}m", delta.num_minutes())
+        } else if delta.num_hours() < 24 {
+            format!("{}h", delta.num_hours())
+        } else if delta.num_days() == 1 {
+            "yday".to_string()
+        } else if delta.num_days() < 7 {
+            format!("{}d", delta.num_days())
+        } else if delta.num_days() < 31 {
+            format!("{}w", delta.num_days() / 7)
+        } else if delta.num_days() < 365 {
+            format!("{}mo", delta.num_days() / 30)
+        } else {
+            "1y+".to_string()
+        }
+    }
+
+    pub fn news_absolute_timestamp(&self, timestamp: Option<DateTime<chrono::Utc>>) -> String {
         timestamp
             .map(|value| {
                 value
@@ -1047,6 +1208,81 @@ impl App {
                     .to_string()
             })
             .unwrap_or_else(|| self.t(Key::NewsStatusUndated).to_string())
+    }
+
+    pub fn news_filtered_indices(&self) -> Vec<usize> {
+        self.news_items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| self.news_matches_filter(item).then_some(index))
+            .collect()
+    }
+
+    pub fn news_visible_rows(&self) -> Vec<NewsListRow> {
+        let filtered = self.news_filtered_indices();
+        if self.news_filter_tab != NewsFilterTab::Watchlist {
+            return filtered.into_iter().map(NewsListRow::Item).collect();
+        }
+
+        let mut rows = Vec::new();
+        let mut seen = HashSet::new();
+
+        for index in filtered {
+            let Some(item) = self.news_items.get(index) else {
+                continue;
+            };
+            let Some(symbol) = item.symbols.first() else {
+                continue;
+            };
+
+            if seen.insert(symbol.clone()) {
+                let count = self
+                    .news_items
+                    .iter()
+                    .filter(|candidate| self.news_matches_filter(candidate))
+                    .filter(|candidate| candidate.symbols.first() == Some(symbol))
+                    .count();
+                let expanded = !self.collapsed_watchlist_news.contains(symbol);
+                rows.push(NewsListRow::Group {
+                    symbol: symbol.clone(),
+                    count,
+                    expanded,
+                });
+            }
+
+            if !self.collapsed_watchlist_news.contains(symbol) {
+                rows.push(NewsListRow::Item(index));
+            }
+        }
+
+        rows
+    }
+
+    fn news_matches_filter(&self, item: &NewsItem) -> bool {
+        match self.news_filter_tab {
+            NewsFilterTab::All => true,
+            NewsFilterTab::Watchlist => item.relevant,
+            NewsFilterTab::Macro => item.category == NewsCategory::Macro,
+            NewsFilterTab::Reddit => item.category == NewsCategory::Reddit,
+            NewsFilterTab::Crypto => item.category == NewsCategory::Crypto,
+        }
+    }
+
+    pub fn cycle_news_filter(&mut self, direction: SelectionDirection) {
+        self.news_filter_tab = match (self.news_filter_tab, direction) {
+            (NewsFilterTab::All, SelectionDirection::Previous) => NewsFilterTab::Crypto,
+            (NewsFilterTab::All, SelectionDirection::Next) => NewsFilterTab::Watchlist,
+            (NewsFilterTab::Watchlist, SelectionDirection::Previous) => NewsFilterTab::All,
+            (NewsFilterTab::Watchlist, SelectionDirection::Next) => NewsFilterTab::Macro,
+            (NewsFilterTab::Macro, SelectionDirection::Previous) => NewsFilterTab::Watchlist,
+            (NewsFilterTab::Macro, SelectionDirection::Next) => NewsFilterTab::Reddit,
+            (NewsFilterTab::Reddit, SelectionDirection::Previous) => NewsFilterTab::Macro,
+            (NewsFilterTab::Reddit, SelectionDirection::Next) => NewsFilterTab::Crypto,
+            (NewsFilterTab::Crypto, SelectionDirection::Previous) => NewsFilterTab::Reddit,
+            (NewsFilterTab::Crypto, SelectionDirection::Next) => NewsFilterTab::All,
+        };
+        self.news_selection = 0;
+        self.news_scroll = 0;
     }
 
     pub fn watchlist_display_name(&self, symbol: &str) -> Option<&str> {
@@ -1542,6 +1778,13 @@ impl App {
         self.news_loading = false;
         self.news_status = None;
         self.selected_news = None;
+        self.news_filter_tab = NewsFilterTab::All;
+        self.news_source_label = "news feed".to_string();
+        self.news_connection_status = "connecting...".to_string();
+        self.news_source_counts.clear();
+        self.collapsed_watchlist_news.clear();
+        self.known_watchlist_news_symbols.clear();
+        self.last_news_refresh = None;
         self.news_receiver = None;
         self.agent_input.clear();
         self.agent_messages.clear();
@@ -1575,6 +1818,25 @@ impl App {
             self.news_scroll = self.news_selection;
         } else if self.news_selection >= self.news_scroll + visible_rows {
             self.news_scroll = self.news_selection + 1 - visible_rows;
+        }
+    }
+
+    fn sync_collapsed_watchlist_news(&mut self) {
+        let symbols = self
+            .news_items
+            .iter()
+            .filter(|item| item.relevant)
+            .filter_map(|item| item.symbols.first().cloned())
+            .collect::<HashSet<_>>();
+        self.collapsed_watchlist_news
+            .retain(|symbol| symbols.contains(symbol));
+        self.known_watchlist_news_symbols
+            .retain(|symbol| symbols.contains(symbol));
+        for symbol in symbols {
+            if !self.known_watchlist_news_symbols.contains(&symbol) {
+                self.collapsed_watchlist_news.insert(symbol.clone());
+            }
+            self.known_watchlist_news_symbols.insert(symbol);
         }
     }
 
@@ -1616,6 +1878,149 @@ impl App {
     fn set_panel_content(&mut self, panel_id: PanelId, window_kind: WindowKind) {
         self.panel_contents.set(panel_id, window_kind);
     }
+
+    pub fn news_empty_message(&self) -> &str {
+        if self.news_items.is_empty() {
+            return self
+                .news_status
+                .as_deref()
+                .unwrap_or(self.t(Key::NewsEmpty));
+        }
+        if self.news_filter_tab == NewsFilterTab::Watchlist {
+            if self.stock_watchlist().is_empty() && self.crypto_watchlist().is_empty() {
+                return self.t(Key::NewsEmptyWatchlistConfig);
+            }
+            return self.t(Key::NewsEmptyWatchlistMatches);
+        }
+        self.news_status
+            .as_deref()
+            .unwrap_or(self.t(Key::NewsEmpty))
+    }
+
+    pub fn news_source_counts_summary(&self, max_sources: usize) -> String {
+        if self.news_source_counts.is_empty() {
+            return "sources: none".to_string();
+        }
+
+        let mut parts = self
+            .news_source_counts
+            .iter()
+            .take(max_sources)
+            .map(|(source, count)| format!("{} {}", source_badge_label(source), count))
+            .collect::<Vec<_>>();
+        let remaining = self.news_source_counts.len().saturating_sub(max_sources);
+        if remaining > 0 {
+            parts.push(format!("+{remaining}"));
+        }
+        format!("sources: {}", parts.join("  "))
+    }
+
+    fn build_watchlist_matchers(&self, kind: WatchlistKind) -> Vec<WatchlistMatcher> {
+        let symbols = match kind {
+            WatchlistKind::Stock => self.stock_watchlist(),
+            WatchlistKind::Crypto => self.crypto_watchlist(),
+        };
+
+        let mut instrument_names = Vec::new();
+        if let Ok(connection) = db::open(&self.ticker_db_path) {
+            for symbol in symbols {
+                let name = search::details(&connection, symbol)
+                    .ok()
+                    .flatten()
+                    .map(|details| details.name);
+                instrument_names.push((symbol.clone(), name));
+            }
+        }
+
+        symbols
+            .iter()
+            .map(|symbol| {
+                let mut terms = vec![symbol.clone()];
+                if let Some(alias) = self.watchlist_display_name(symbol) {
+                    if !alias.trim().is_empty() {
+                        terms.push(alias.trim().to_string());
+                    }
+                }
+                if let Some((_, Some(name))) = instrument_names
+                    .iter()
+                    .find(|(candidate, _)| candidate == symbol)
+                {
+                    terms.extend(name_match_terms(name));
+                }
+                terms.sort();
+                terms.dedup();
+                WatchlistMatcher {
+                    symbol: symbol.clone(),
+                    terms,
+                }
+            })
+            .collect()
+    }
+}
+
+fn source_badge_label(source: &str) -> String {
+    match source {
+        "Wall Street Journal" => "WSJ".to_string(),
+        "Financial Times" => "FT".to_string(),
+        "Yahoo Finance" => "YF".to_string(),
+        "MarketWatch" => "MW".to_string(),
+        "FinancialJuice" => "FJ".to_string(),
+        "Reuters" => "RTRS".to_string(),
+        "Bloomberg" => "BBG".to_string(),
+        "Seeking Alpha" => "SA".to_string(),
+        "Barron's" => "BAR".to_string(),
+        "Federal Reserve" => "FED".to_string(),
+        "Business Wire" => "BW".to_string(),
+        "PR Newswire" => "PRN".to_string(),
+        "GlobeNewswire" => "GNW".to_string(),
+        _ => source
+            .chars()
+            .take(4)
+            .collect::<String>()
+            .to_ascii_uppercase(),
+    }
+}
+
+fn name_match_terms(name: &str) -> Vec<String> {
+    let cleaned_text = name.replace(',', " ").replace('.', " ").replace('&', " ");
+    let cleaned = cleaned_text
+        .split_whitespace()
+        .filter(|token| {
+            !matches!(
+                token.to_ascii_lowercase().as_str(),
+                "inc"
+                    | "corp"
+                    | "corporation"
+                    | "company"
+                    | "co"
+                    | "holdings"
+                    | "holding"
+                    | "group"
+                    | "plc"
+                    | "ltd"
+                    | "limited"
+                    | "class"
+                    | "common"
+                    | "stock"
+                    | "ordinary"
+                    | "shares"
+                    | "the"
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut terms = Vec::new();
+    if !cleaned.is_empty() {
+        terms.push(cleaned.join(" "));
+        if cleaned[0].len() >= 4 {
+            terms.push(cleaned[0].to_string());
+        }
+        if cleaned.len() == 1 {
+            terms.push(cleaned[0].to_string());
+        }
+    }
+    terms.retain(|term| term.len() >= 3);
+    terms
 }
 
 impl PanelId {
