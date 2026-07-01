@@ -25,6 +25,10 @@ pub struct AppConfig {
     #[serde(default)]
     pub metadata_provider: MetadataProviderConfig,
     #[serde(default)]
+    pub llm: LlmConfig,
+    #[serde(default)]
+    pub news: NewsConfig,
+    #[serde(default)]
     pub update: UpdateConfig,
 }
 
@@ -77,6 +81,26 @@ pub struct UpdateConfig {
     pub commit_batch_size: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LlmConfig {
+    #[serde(default = "default_llm_base_url")]
+    pub base_url: String,
+    #[serde(default = "default_llm_model")]
+    pub model: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NewsConfig {
+    #[serde(default = "default_news_feeds")]
+    pub feeds: Vec<String>,
+    #[serde(default = "default_news_fetch_on_startup")]
+    pub fetch_on_startup: bool,
+}
+
 impl AppConfig {
     pub fn load() -> io::Result<Self> {
         let mut config = Self::default()?;
@@ -116,6 +140,18 @@ impl AppConfig {
             config.metadata_provider.provider = MetadataProviderKind::None;
         }
 
+        if let Ok(base_url) = env::var("LLM_BASE_URL") {
+            config.llm.base_url = base_url;
+        }
+        if let Ok(model) = env::var("LLM_MODEL") {
+            config.llm.model = model;
+        }
+        if let Ok(api_key) = env::var("LLM_API_KEY") {
+            config.llm.api_key = Some(api_key);
+        } else if let Ok(api_key) = env::var("OPENROUTER_API_KEY") {
+            config.llm.api_key = Some(api_key);
+        }
+
         Ok(config)
     }
 
@@ -142,6 +178,8 @@ impl Default for AppConfig {
             theme: ThemeName::default(),
             watchlist: WatchlistConfig::default(),
             metadata_provider: MetadataProviderConfig::default(),
+            llm: LlmConfig::default(),
+            news: NewsConfig::default(),
             update: UpdateConfig::default(),
         }
     }
@@ -179,6 +217,25 @@ impl Default for UpdateConfig {
             auto_check_on_startup: default_auto_check_on_startup(),
             enrich_max_age_hours: default_enrich_max_age_hours(),
             commit_batch_size: default_commit_batch_size(),
+        }
+    }
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            base_url: default_llm_base_url(),
+            model: default_llm_model(),
+            api_key: None,
+        }
+    }
+}
+
+impl Default for NewsConfig {
+    fn default() -> Self {
+        Self {
+            feeds: default_news_feeds(),
+            fetch_on_startup: default_news_fetch_on_startup(),
         }
     }
 }
@@ -249,6 +306,27 @@ fn default_enrich_max_age_hours() -> i64 {
 
 fn default_commit_batch_size() -> usize {
     500
+}
+
+fn default_llm_base_url() -> String {
+    "https://openrouter.ai/api/v1".to_string()
+}
+
+fn default_llm_model() -> String {
+    "openrouter/free".to_string()
+}
+
+fn default_news_feeds() -> Vec<String> {
+    vec![
+        "https://feeds.content.dowjones.io/public/rss/mw_topstories".to_string(),
+        "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines".to_string(),
+        "https://feeds.marketwatch.com/marketwatch/bulletins".to_string(),
+        "https://feeds.content.dowjones.io/public/rss/mw_marketpulse".to_string(),
+    ]
+}
+
+fn default_news_fetch_on_startup() -> bool {
+    true
 }
 
 #[cfg(test)]

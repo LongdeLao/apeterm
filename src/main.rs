@@ -1,6 +1,7 @@
 use std::time::Duration;
 use std::{error::Error, io};
 
+mod ai;
 mod app;
 mod config;
 mod db;
@@ -9,6 +10,7 @@ mod event;
 mod i18n;
 mod import;
 mod market;
+mod news;
 mod pages;
 mod quotes;
 mod search;
@@ -29,6 +31,7 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use rusqlite::params;
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _ = dotenvy::dotenv();
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.first().map(String::as_str) == Some("--check-locales") {
         i18n::validate_embedded_locales().map_err(io::Error::other)?;
@@ -57,6 +60,9 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     terminal.clear()?;
 
     let mut app = App::new(config.clone());
+    if app.news_fetch_on_startup() {
+        app.refresh_news();
+    }
     let (market_sender, market_events) = market::market_channel();
     market::spawn_market_streams(
         market_sender.clone(),
@@ -89,6 +95,7 @@ fn run_app(
         while let Ok(event) = market_events.try_recv() {
             app.handle_market_event(event);
         }
+        app.poll_news();
         if app.take_market_refresh_request() {
             market::spawn_market_streams(
                 market_sender.clone(),
@@ -97,6 +104,7 @@ fn run_app(
             );
         }
         app.poll_live_details();
+        app.poll_agent_response();
 
         terminal.draw(|frame| ui::render(frame, &app))?;
 

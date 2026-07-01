@@ -171,7 +171,7 @@ fn edit_action_line<'a>(app: &'a App, row: WatchlistEditRow, label: &'a str) -> 
     let selected = app.selected_watchlist_row() == Some(row);
     let style = if selected {
         Style::default()
-            .fg(Color::Black)
+            .fg(theme.background.unwrap_or(Color::Black))
             .bg(theme.accent)
             .add_modifier(Modifier::BOLD)
     } else {
@@ -200,7 +200,7 @@ fn symbol_line<'a>(
 
     let base_style = if selected {
         Style::default()
-            .fg(Color::Black)
+            .fg(theme.background.unwrap_or(Color::Black))
             .bg(theme.accent)
             .add_modifier(Modifier::BOLD)
     } else {
@@ -343,7 +343,7 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
         let selected = index == app.watchlist_suggestion_selection;
         let style = if selected {
             Style::default()
-                .fg(Color::Black)
+                .fg(theme.background.unwrap_or(Color::Black))
                 .bg(theme.accent)
                 .add_modifier(Modifier::BOLD)
         } else {

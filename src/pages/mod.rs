@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod calendar;
 pub mod dashboard;
 pub mod fill;

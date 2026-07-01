@@ -6,19 +6,29 @@ use ratatui::{
 };
 
 use crate::{
-    app::{App, Page, WatchlistEditMode},
+    app::{App, Page, PanelId, WatchlistEditMode, WindowKind},
     i18n::Key,
-    pages::{dashboard, onboarding, search, settings},
+    pages::{agent, dashboard, onboarding, search, settings},
     theme::current_theme,
 };
 
 pub fn render(frame: &mut Frame, app: &App) {
-    match app.page {
+    let rendered_page = match app.page {
+        Page::Agent => app.agent_background_page(),
+        page => page,
+    };
+
+    match rendered_page {
         Page::Onboarding => onboarding::render(frame, app),
         Page::Dashboard => dashboard::render(frame, app),
         Page::Search => search::render(frame, app),
         Page::Details => search::render_details(frame, app),
         Page::Settings => settings::render(frame, app),
+        Page::Agent => {}
+    }
+
+    if app.page == Page::Agent {
+        agent::render(frame, app);
     }
     render_footer(frame, app);
 }
@@ -66,16 +76,22 @@ fn footer_text(app: &App) -> String {
     match app.page {
         Page::Search => app.t(Key::SearchFooter).to_string(),
         Page::Settings => app.t(Key::SettingsFooter).to_string(),
+        Page::Agent => app.t(Key::AgentFooter).to_string(),
         Page::Dashboard
-            if app.focused_panel == crate::app::PanelId::Watchlist
-                && app.panel_content(crate::app::PanelId::Watchlist)
-                    == crate::app::WindowKind::Watchlist =>
+            if app.focused_panel == PanelId::Watchlist
+                && app.panel_content(PanelId::Watchlist) == WindowKind::Watchlist =>
         {
             format!(
                 "{}  {}",
                 app.t(Key::AppFooter),
                 app.t(Key::WatchlistFooterEdit)
             )
+        }
+        Page::Dashboard
+            if app.focused_panel == PanelId::News
+                && app.panel_content(PanelId::News) == WindowKind::News =>
+        {
+            format!("{}  {}", app.t(Key::AppFooter), app.t(Key::NewsFooter))
         }
         _ => app.t(Key::AppFooter).to_string(),
     }

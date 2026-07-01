@@ -12,6 +12,8 @@ pub enum Key {
     AppThemeLight,
     #[strum(serialize = "app.theme.transparent")]
     AppThemeTransparent,
+    #[strum(serialize = "app.theme.bloomberg")]
+    AppThemeBloomberg,
     #[strum(serialize = "onboarding.prompt.continue")]
     OnboardingPromptContinue,
     #[strum(serialize = "onboarding.title.language")]
@@ -26,6 +28,8 @@ pub enum Key {
     PanelTitleCalendar,
     #[strum(serialize = "panel.title.notes")]
     PanelTitleNotes,
+    #[strum(serialize = "panel.title.agent")]
+    PanelTitleAgent,
     #[strum(serialize = "panel.title.picker")]
     PanelTitlePicker,
     #[strum(serialize = "app.footer")]
@@ -98,6 +102,12 @@ pub enum Key {
     WatchlistEditInputRename,
     #[strum(serialize = "watchlist.edit.input_ticker")]
     WatchlistEditInputTicker,
+    #[strum(serialize = "agent.footer")]
+    AgentFooter,
+    #[strum(serialize = "agent.status.empty")]
+    AgentStatusEmpty,
+    #[strum(serialize = "agent.status.loading")]
+    AgentStatusLoading,
     #[strum(serialize = "watchlist.market.pre_market")]
     WatchlistMarketPreMarket,
     #[strum(serialize = "watchlist.market.regular")]
@@ -108,6 +118,30 @@ pub enum Key {
     CalendarEmpty,
     #[strum(serialize = "news.empty")]
     NewsEmpty,
+    #[strum(serialize = "news.footer")]
+    NewsFooter,
+    #[strum(serialize = "news.status.loading")]
+    NewsStatusLoading,
+    #[strum(serialize = "news.status.error")]
+    NewsStatusError,
+    #[strum(serialize = "news.status.interrupted")]
+    NewsStatusInterrupted,
+    #[strum(serialize = "news.status.undated")]
+    NewsStatusUndated,
+    #[strum(serialize = "news.status.opened")]
+    NewsStatusOpened,
+    #[strum(serialize = "news.status.open_error")]
+    NewsStatusOpenError,
+    #[strum(serialize = "news.detail.source")]
+    NewsDetailSource,
+    #[strum(serialize = "news.detail.author")]
+    NewsDetailAuthor,
+    #[strum(serialize = "news.detail.published")]
+    NewsDetailPublished,
+    #[strum(serialize = "news.detail.link")]
+    NewsDetailLink,
+    #[strum(serialize = "news.detail.summary")]
+    NewsDetailSummary,
     #[strum(serialize = "notes.empty")]
     NotesEmpty,
     #[strum(serialize = "notes.language")]

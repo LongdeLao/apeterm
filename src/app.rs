@@ -4,12 +4,16 @@ use std::{
     thread,
 };
 
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ai::client::LlmClient,
     config::AppConfig,
+    config::LlmConfig,
     i18n::{I18n, Key, Locale},
     market::{MarketEvent, MarketSession},
+    news::{self, FeedSource, NewsItem},
     quotes::{Quote, update_market_quotes},
     search::{self, InstrumentDetails, LiveInstrumentDetails, SearchResult},
 };
@@ -24,6 +28,7 @@ pub enum Page {
     Search,
     Details,
     Settings,
+    Agent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +45,7 @@ pub enum ThemeName {
     Dark,
     Light,
     Transparent,
+    Bloomberg,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +149,32 @@ pub struct TextInput {
     pub input: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentRole {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentMessage {
+    pub role: AgentRole,
+    pub content: String,
+}
+
+#[derive(Debug)]
+enum AgentEvent {
+    Status(String),
+    Chunk(String),
+    Done,
+    Error(String),
+}
+
+#[derive(Debug)]
+enum NewsEvent {
+    Loaded(Vec<NewsItem>),
+    Error(String),
+}
+
 #[derive(Debug)]
 pub struct App {
     pub should_quit: bool,
@@ -181,6 +213,22 @@ pub struct App {
     pub watchlist_suggestions: Vec<SearchResult>,
     pub watchlist_suggestion_selection: usize,
     pub market_refresh_requested: bool,
+    pub news_items: Vec<NewsItem>,
+    pub news_selection: usize,
+    pub news_scroll: usize,
+    pub news_loading: bool,
+    pub news_status: Option<String>,
+    pub selected_news: Option<NewsItem>,
+    pub agent_input: String,
+    pub agent_messages: Vec<AgentMessage>,
+    pub agent_loading: bool,
+    pub agent_status: Option<String>,
+    pub agent_scroll: u16,
+    pub agent_auto_scroll: bool,
+    agent_response_receiver: Option<Receiver<AgentEvent>>,
+    news_receiver: Option<Receiver<NewsEvent>>,
+    agent_previous_page: Page,
+    llm_config: LlmConfig,
     config: AppConfig,
 }
 
@@ -236,6 +284,22 @@ impl App {
             watchlist_suggestions: Vec::new(),
             watchlist_suggestion_selection: 0,
             market_refresh_requested: false,
+            news_items: Vec::new(),
+            news_selection: 0,
+            news_scroll: 0,
+            news_loading: false,
+            news_status: None,
+            selected_news: None,
+            agent_input: String::new(),
+            agent_messages: Vec::new(),
+            agent_loading: false,
+            agent_status: None,
+            agent_scroll: 0,
+            agent_auto_scroll: true,
+            agent_response_receiver: None,
+            news_receiver: None,
+            agent_previous_page: Page::Dashboard,
+            llm_config: config.llm.clone(),
             config,
         }
     }
@@ -361,6 +425,11 @@ impl App {
     }
 
     pub fn close_help(&mut self) {
+        if self.selected_news.is_some() {
+            self.selected_news = None;
+            return;
+        }
+
         self.show_help = false;
         self.pending_split = false;
         if self.page == Page::Details {
@@ -377,6 +446,8 @@ impl App {
             } else {
                 self.page = Page::Dashboard;
             }
+        } else if self.page == Page::Agent {
+            self.close_agent();
         } else if self.is_editing_watchlist() {
             self.close_watchlist_editor();
         }
@@ -516,6 +587,7 @@ impl App {
         self.page = Page::Search;
         self.show_help = false;
         self.pending_split = false;
+        self.selected_news = None;
         self.refresh_search();
     }
 
@@ -524,6 +596,96 @@ impl App {
         self.show_help = false;
         self.pending_split = false;
         self.reset_confirmation = None;
+        self.selected_news = None;
+    }
+
+    pub fn open_agent(&mut self) {
+        if self.page != Page::Agent {
+            self.agent_previous_page = self.page;
+        }
+        self.page = Page::Agent;
+        self.show_help = false;
+        self.pending_split = false;
+        self.watchlist_editor = None;
+        self.agent_auto_scroll = true;
+    }
+
+    pub fn close_agent(&mut self) {
+        self.page = self.agent_previous_page;
+        self.agent_loading = false;
+        self.agent_response_receiver = None;
+        self.agent_status = None;
+    }
+
+    pub fn agent_background_page(&self) -> Page {
+        self.agent_previous_page
+    }
+
+    pub fn push_agent_char(&mut self, character: char) {
+        if character.is_control() {
+            return;
+        }
+        self.agent_input.push(character);
+    }
+
+    pub fn pop_agent_char(&mut self) {
+        self.agent_input.pop();
+    }
+
+    pub fn send_agent_message(&mut self) {
+        if self.agent_loading {
+            return;
+        }
+
+        let prompt = self.agent_input.trim().to_string();
+        if prompt.is_empty() {
+            return;
+        }
+
+        self.agent_messages.push(AgentMessage {
+            role: AgentRole::User,
+            content: prompt.clone(),
+        });
+        self.agent_messages.push(AgentMessage {
+            role: AgentRole::Assistant,
+            content: String::new(),
+        });
+        self.agent_input.clear();
+        self.agent_loading = true;
+        self.agent_status = Some("debug: preparing request".to_string());
+        self.agent_auto_scroll = true;
+
+        let llm_config = self.llm_config.clone();
+        let (sender, receiver) = mpsc::channel();
+        self.agent_response_receiver = Some(receiver);
+        thread::spawn(move || match llm_config.api_key {
+            Some(api_key) if !api_key.trim().is_empty() => {
+                let _ = sender.send(AgentEvent::Status("debug: connecting".to_string()));
+                let result = LlmClient::new(llm_config.base_url, api_key, llm_config.model)
+                    .chat_stream(
+                        &prompt,
+                        |chunk| {
+                            let _ = sender.send(AgentEvent::Chunk(chunk));
+                        },
+                        |status| {
+                            let _ = sender.send(AgentEvent::Status(status));
+                        },
+                    );
+                match result {
+                    Ok(()) => {
+                        let _ = sender.send(AgentEvent::Done);
+                    }
+                    Err(error) => {
+                        let _ = sender.send(AgentEvent::Error(error));
+                    }
+                }
+            }
+            _ => {
+                let _ = sender.send(AgentEvent::Error(
+                    "missing LLM_API_KEY / OPENROUTER_API_KEY".to_string(),
+                ));
+            }
+        });
     }
 
     pub fn push_search_char(&mut self, character: char) {
@@ -622,6 +784,79 @@ impl App {
         });
     }
 
+    pub fn poll_agent_response(&mut self) {
+        let Some(receiver) = &self.agent_response_receiver else {
+            return;
+        };
+
+        loop {
+            match receiver.try_recv() {
+                Ok(AgentEvent::Status(status)) => {
+                    self.agent_status = Some(status);
+                }
+                Ok(AgentEvent::Chunk(content)) => {
+                    if let Some(message) = self
+                        .agent_messages
+                        .iter_mut()
+                        .rev()
+                        .find(|message| message.role == AgentRole::Assistant)
+                    {
+                        message.content.push_str(&content);
+                    }
+                    self.agent_status = Some("debug: receiving chunks".to_string());
+                    if self.agent_auto_scroll {
+                        self.agent_scroll = u16::MAX;
+                    }
+                }
+                Ok(AgentEvent::Done) => {
+                    self.agent_loading = false;
+                    self.agent_status = Some("debug: stream completed".to_string());
+                    self.agent_response_receiver = None;
+                    break;
+                }
+                Ok(AgentEvent::Error(error)) => {
+                    if self.agent_messages.last().is_some_and(|message| {
+                        message.role == AgentRole::Assistant && message.content.is_empty()
+                    }) {
+                        self.agent_messages.pop();
+                    }
+                    self.agent_loading = false;
+                    self.agent_status = Some(error);
+                    self.agent_response_receiver = None;
+                    break;
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.agent_loading = false;
+                    self.agent_status = Some("request interrupted".to_string());
+                    self.agent_response_receiver = None;
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn move_agent_scroll(&mut self, direction: SelectionDirection) {
+        self.agent_auto_scroll = false;
+        self.agent_scroll = match direction {
+            SelectionDirection::Previous => self.agent_scroll.saturating_sub(1),
+            SelectionDirection::Next => self.agent_scroll.saturating_add(1),
+        };
+    }
+
+    pub fn page_agent_scroll(&mut self, direction: SelectionDirection) {
+        self.agent_auto_scroll = false;
+        self.agent_scroll = match direction {
+            SelectionDirection::Previous => self.agent_scroll.saturating_sub(6),
+            SelectionDirection::Next => self.agent_scroll.saturating_add(6),
+        };
+    }
+
+    pub fn stick_agent_scroll_to_bottom(&mut self) {
+        self.agent_auto_scroll = true;
+        self.agent_scroll = u16::MAX;
+    }
+
     pub fn toggle_search_asset_kind(&mut self) {
         self.search_asset_kind = match self.search_asset_kind {
             SearchAssetKind::Stocks => SearchAssetKind::Etfs,
@@ -688,6 +923,132 @@ impl App {
         &self.config.watchlist.crypto_symbols
     }
 
+    pub fn news_fetch_on_startup(&self) -> bool {
+        self.config.news.fetch_on_startup
+    }
+
+    pub fn refresh_news(&mut self) {
+        if self.news_loading {
+            return;
+        }
+
+        let feed_urls = self.config.news.feeds.clone();
+        self.news_loading = true;
+        self.news_status = Some(self.t(Key::NewsStatusLoading).to_string());
+
+        let (sender, receiver) = mpsc::channel();
+        self.news_receiver = Some(receiver);
+        thread::spawn(move || {
+            let labels = [
+                "Top Stories",
+                "Real-time Headlines",
+                "Breaking News Bulletins",
+                "Market Pulse",
+            ];
+            let owned_feeds = feed_urls
+                .iter()
+                .enumerate()
+                .map(|(index, url)| FeedSource {
+                    label: labels.get(index).copied().unwrap_or("MarketWatch"),
+                    url: url.as_str(),
+                })
+                .collect::<Vec<_>>();
+
+            match news::fetch_news(&owned_feeds) {
+                Ok(items) => {
+                    let _ = sender.send(NewsEvent::Loaded(items));
+                }
+                Err(error) => {
+                    let _ = sender.send(NewsEvent::Error(error));
+                }
+            }
+        });
+    }
+
+    pub fn poll_news(&mut self) {
+        let Some(receiver) = &self.news_receiver else {
+            return;
+        };
+
+        match receiver.try_recv() {
+            Ok(NewsEvent::Loaded(items)) => {
+                self.news_items = items;
+                self.news_selection = self
+                    .news_selection
+                    .min(self.news_items.len().saturating_sub(1));
+                self.sync_news_scroll(12);
+                self.news_loading = false;
+                self.news_receiver = None;
+                self.news_status = if self.news_items.is_empty() {
+                    Some(self.t(Key::NewsEmpty).to_string())
+                } else {
+                    None
+                };
+            }
+            Ok(NewsEvent::Error(error)) => {
+                self.news_loading = false;
+                self.news_receiver = None;
+                self.news_status = Some(self.t(Key::NewsStatusError).replace("{error}", &error));
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.news_loading = false;
+                self.news_receiver = None;
+                self.news_status = Some(self.t(Key::NewsStatusInterrupted).to_string());
+            }
+        }
+    }
+
+    pub fn move_news_selection(&mut self, direction: SelectionDirection) {
+        if self.news_items.is_empty() {
+            self.news_selection = 0;
+            self.news_scroll = 0;
+            return;
+        }
+
+        self.news_selection = match direction {
+            SelectionDirection::Previous => self.news_selection.saturating_sub(1),
+            SelectionDirection::Next => {
+                (self.news_selection + 1).min(self.news_items.len().saturating_sub(1))
+            }
+        };
+        self.sync_news_scroll(12);
+    }
+
+    pub fn open_selected_news(&mut self) {
+        self.selected_news = self.news_items.get(self.news_selection).cloned();
+    }
+
+    pub fn open_selected_news_in_browser(&mut self) {
+        let Some(item) = self.news_items.get(self.news_selection) else {
+            return;
+        };
+
+        match open_url(&item.url) {
+            Ok(()) => {
+                self.news_status = Some(
+                    self.t(Key::NewsStatusOpened)
+                        .replace("{source}", item.source.as_str()),
+                );
+            }
+            Err(error) => {
+                self.news_status =
+                    Some(self.t(Key::NewsStatusOpenError).replace("{error}", &error));
+            }
+        }
+    }
+
+    pub fn news_timestamp(&self, timestamp: Option<DateTime<chrono::Utc>>) -> String {
+        timestamp
+            .map(|value| {
+                value
+                    .with_timezone(&Local)
+                    .format("%b %d %H:%M")
+                    .to_string()
+            })
+            .unwrap_or_else(|| self.t(Key::NewsStatusUndated).to_string())
+    }
+
     pub fn watchlist_display_name(&self, symbol: &str) -> Option<&str> {
         self.config
             .watchlist
@@ -735,6 +1096,39 @@ impl App {
                     input: String::new(),
                 });
             }
+        }
+    }
+
+    pub fn adjust_settings_item(&mut self, direction: SelectionDirection) {
+        if self.reset_confirmation.is_some() {
+            return;
+        }
+
+        match self.selected_settings_item() {
+            SettingsItem::Language => {
+                let locales = self.i18n.available_locales();
+                if locales.is_empty() {
+                    return;
+                }
+                let current = locales
+                    .iter()
+                    .position(|locale| locale == &self.locale)
+                    .unwrap_or(0);
+                let next = match direction {
+                    SelectionDirection::Previous => {
+                        if current == 0 {
+                            locales.len() - 1
+                        } else {
+                            current - 1
+                        }
+                    }
+                    SelectionDirection::Next => (current + 1) % locales.len(),
+                };
+                self.set_locale(locales[next].clone());
+            }
+            SettingsItem::Theme => self.set_theme(self.theme_name.move_to(direction)),
+            SettingsItem::Onboarding => self.toggle_onboarding_preference(),
+            SettingsItem::Reset => {}
         }
     }
 
@@ -1131,6 +1525,7 @@ impl App {
     fn reset_settings_to_defaults(&mut self) {
         let config = AppConfig::default().unwrap_or_else(|_| <AppConfig as Default>::default());
         self.config = config.clone();
+        self.llm_config = config.llm.clone();
         let locale = config.locale.clone();
         self.locale = locale.clone();
         self.i18n.set_active(locale);
@@ -1141,6 +1536,18 @@ impl App {
         self.settings_selection = 0;
         self.reset_confirmation = None;
         self.watchlist_editor = None;
+        self.news_items.clear();
+        self.news_selection = 0;
+        self.news_scroll = 0;
+        self.news_loading = false;
+        self.news_status = None;
+        self.selected_news = None;
+        self.news_receiver = None;
+        self.agent_input.clear();
+        self.agent_messages.clear();
+        self.agent_loading = false;
+        self.agent_status = None;
+        self.agent_response_receiver = None;
         self.reset_dashboard();
         let _ = self.config.save();
     }
@@ -1155,6 +1562,19 @@ impl App {
             self.search_scroll = self.search_selection;
         } else if self.search_selection >= self.search_scroll + visible_rows {
             self.search_scroll = self.search_selection + 1 - visible_rows;
+        }
+    }
+
+    pub fn sync_news_scroll(&mut self, visible_rows: usize) {
+        if visible_rows == 0 {
+            self.news_scroll = self.news_selection;
+            return;
+        }
+
+        if self.news_selection < self.news_scroll {
+            self.news_scroll = self.news_selection;
+        } else if self.news_selection >= self.news_scroll + visible_rows {
+            self.news_scroll = self.news_selection + 1 - visible_rows;
         }
     }
 
@@ -1309,6 +1729,22 @@ fn normalize_symbol(input: &str) -> Option<String> {
     }
 }
 
+fn open_url(url: &str) -> Result<(), String> {
+    let (command, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
+        ("open", &[url])
+    } else if cfg!(target_os = "windows") {
+        ("cmd", &["/C", "start", "", url])
+    } else {
+        ("xdg-open", &[url])
+    };
+
+    std::process::Command::new(command)
+        .args(args)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
 impl ThemeName {
     fn move_to(self, direction: SelectionDirection) -> Self {
         match direction {
@@ -1319,9 +1755,10 @@ impl ThemeName {
 
     fn previous(self) -> Self {
         match self {
-            Self::Dark => Self::Transparent,
+            Self::Dark => Self::Bloomberg,
             Self::Light => Self::Dark,
             Self::Transparent => Self::Light,
+            Self::Bloomberg => Self::Transparent,
         }
     }
 
@@ -1329,7 +1766,8 @@ impl ThemeName {
         match self {
             Self::Dark => Self::Light,
             Self::Light => Self::Transparent,
-            Self::Transparent => Self::Dark,
+            Self::Transparent => Self::Bloomberg,
+            Self::Bloomberg => Self::Dark,
         }
     }
 
@@ -1338,6 +1776,7 @@ impl ThemeName {
             Self::Dark => Key::AppThemeDark,
             Self::Light => Key::AppThemeLight,
             Self::Transparent => Key::AppThemeTransparent,
+            Self::Bloomberg => Key::AppThemeBloomberg,
         }
     }
 }

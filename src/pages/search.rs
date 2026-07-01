@@ -177,7 +177,9 @@ pub fn render_details(frame: &mut Frame, app: &App) {
         );
     }
 
-    let background = theme.background.unwrap_or(ratatui::style::Color::Black);
+    let background = theme
+        .background
+        .unwrap_or(ratatui::style::Color::Rgb(24, 24, 24));
     let panel = Paragraph::new(lines)
         .style(Style::default().fg(theme.foreground).bg(background))
         .wrap(Wrap { trim: false })

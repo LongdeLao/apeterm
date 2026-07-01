@@ -15,32 +15,42 @@ pub fn current_theme(theme_name: ThemeName) -> Theme {
         ThemeName::Dark => dark_theme(),
         ThemeName::Light => light_theme(),
         ThemeName::Transparent => transparent_theme(),
+        ThemeName::Bloomberg => bloomberg_theme(),
     }
 }
 
 fn dark_theme() -> Theme {
     Theme {
-        background: Some(Color::Rgb(0, 0, 0)),
-        foreground: Color::Rgb(255, 255, 255),
-        muted: Color::Rgb(120, 120, 120),
-        accent: Color::Rgb(255, 255, 255),
+        background: Some(Color::Rgb(12, 12, 12)),
+        foreground: Color::Rgb(232, 232, 232),
+        muted: Color::Rgb(144, 144, 144),
+        accent: Color::Rgb(208, 208, 208),
     }
 }
 
 fn light_theme() -> Theme {
     Theme {
-        background: Some(Color::Rgb(255, 255, 255)),
-        foreground: Color::Rgb(0, 0, 0),
-        muted: Color::Rgb(120, 120, 120),
-        accent: Color::Rgb(80, 80, 80),
+        background: Some(Color::Rgb(244, 244, 240)),
+        foreground: Color::Rgb(40, 40, 40),
+        muted: Color::Rgb(118, 118, 112),
+        accent: Color::Rgb(88, 88, 84),
     }
 }
 
 fn transparent_theme() -> Theme {
     Theme {
         background: None,
-        foreground: Color::Rgb(255, 255, 255),
-        muted: Color::Rgb(120, 120, 120),
-        accent: Color::Rgb(180, 180, 180),
+        foreground: Color::Rgb(242, 242, 242),
+        muted: Color::Rgb(168, 168, 168),
+        accent: Color::Rgb(214, 214, 214),
+    }
+}
+
+fn bloomberg_theme() -> Theme {
+    Theme {
+        background: Some(Color::Rgb(8, 8, 8)),
+        foreground: Color::Rgb(255, 168, 0),
+        muted: Color::Rgb(154, 154, 154),
+        accent: Color::Rgb(255, 102, 0),
     }
 }

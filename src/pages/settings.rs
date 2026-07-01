@@ -51,37 +51,41 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 fn render_rows(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
-    let rows = settings_rows(app)
-        .into_iter()
-        .enumerate()
-        .map(|(index, (item, label, value))| {
+    let rows = settings_rows(app).into_iter().enumerate().map(
+        |(index, (item, label, value, adjustable))| {
             let selected = app.settings_selection == index;
             let is_reset = item == SettingsItem::Reset;
             let style = if is_reset && selected {
                 Style::default()
-                    .fg(Color::White)
-                    .bg(Color::Red)
+                    .fg(theme.foreground)
+                    .bg(Color::Rgb(120, 22, 22))
                     .add_modifier(Modifier::BOLD)
             } else if selected {
                 Style::default()
-                    .fg(Color::Black)
+                    .fg(theme.background.unwrap_or(Color::Black))
                     .bg(theme.accent)
                     .add_modifier(Modifier::BOLD)
             } else if is_reset {
                 Style::default()
-                    .fg(Color::LightRed)
+                    .fg(Color::Rgb(196, 82, 82))
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(theme.foreground)
             };
             let marker = if selected { ">" } else { " " };
+            let value = if adjustable {
+                format!("< {value} >")
+            } else {
+                value
+            };
             Row::new(vec![
                 Cell::from(marker),
                 Cell::from(label),
                 Cell::from(value),
             ])
             .style(style)
-        });
+        },
+    );
 
     let table = Table::new(
         rows,
@@ -102,17 +106,19 @@ fn render_rows(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(table, inset(area, 4, 2));
 }
 
-fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String)> {
+fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String, bool)> {
     vec![
         (
             SettingsItem::Language,
             app.t(Key::SettingsRowLanguage).to_string(),
             locale_label(app, &app.locale),
+            true,
         ),
         (
             SettingsItem::Theme,
             app.t(Key::SettingsRowTheme).to_string(),
             app.t(app.theme_name.label_key()).to_string(),
+            true,
         ),
         (
             SettingsItem::Onboarding,
@@ -122,11 +128,13 @@ fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String)> {
             } else {
                 app.t(Key::SettingsValueOn).to_string()
             },
+            true,
         ),
         (
             SettingsItem::Reset,
             app.t(Key::SettingsSectionDanger).to_string(),
             app.t(Key::SettingsRowReset).to_string(),
+            false,
         ),
     ]
 }

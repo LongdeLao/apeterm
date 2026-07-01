@@ -14,12 +14,18 @@ pub fn handle_event(app: &mut App, event: Event) {
 fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
     let is_control = modifiers.contains(KeyModifiers::CONTROL);
 
+    if key_code == KeyCode::Char('a') && !is_control && can_open_agent(app) {
+        app.open_agent();
+        return;
+    }
+
     match key_code {
         KeyCode::Char('q') if is_control => app.should_quit = true,
         KeyCode::Char('q')
             if !is_control
                 && !app.is_editing_watchlist()
                 && app.page != Page::Search
+                && app.page != Page::Agent
                 && (app.page != Page::Settings || app.reset_confirmation.is_none()) =>
         {
             app.should_quit = true
@@ -35,12 +41,16 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
                 app.activate_watchlist_editor();
             } else if app.page == Page::Onboarding {
                 app.advance_onboarding();
+            } else if app.page == Page::Dashboard && app.focused_panel == PanelId::News {
+                app.open_selected_news();
             } else if app.page == Page::Dashboard {
                 app.confirm_window_picker();
             } else if app.page == Page::Search {
                 app.open_selected_details();
             } else if app.page == Page::Settings {
                 app.activate_settings_item();
+            } else if app.page == Page::Agent {
+                app.send_agent_message();
             }
         }
         _ => match app.page {
@@ -49,8 +59,19 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
             Page::Search => handle_search_key(app, key_code),
             Page::Details => {}
             Page::Settings => handle_settings_key(app, key_code),
+            Page::Agent => handle_agent_key(app, key_code),
         },
     }
+}
+
+fn can_open_agent(app: &App) -> bool {
+    if app.page == Page::Agent || app.reset_confirmation.is_some() {
+        return false;
+    }
+
+    !app.watchlist_editor
+        .as_ref()
+        .is_some_and(|editor| editor.mode.is_some())
 }
 
 fn handle_onboarding_key(app: &mut App, key_code: KeyCode) {
@@ -95,6 +116,10 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         return;
     }
 
+    if app.focused_panel == PanelId::News && handle_news_key(app, key_code) {
+        return;
+    }
+
     match (key_code, is_control) {
         (KeyCode::Tab, false) => app.focus_next_panel(),
         (KeyCode::BackTab, false) => app.focus_previous_panel(),
@@ -131,6 +156,46 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
     }
 }
 
+fn handle_news_key(app: &mut App, key_code: KeyCode) -> bool {
+    match key_code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.move_news_selection(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.move_news_selection(SelectionDirection::Next);
+            true
+        }
+        KeyCode::Enter => {
+            app.open_selected_news();
+            true
+        }
+        KeyCode::Char('o') => {
+            app.open_selected_news_in_browser();
+            true
+        }
+        KeyCode::Char('r') => {
+            app.refresh_news();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_agent_key(app: &mut App, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Up => app.move_agent_scroll(SelectionDirection::Previous),
+        KeyCode::Down => app.move_agent_scroll(SelectionDirection::Next),
+        KeyCode::PageUp => app.page_agent_scroll(SelectionDirection::Previous),
+        KeyCode::PageDown => app.page_agent_scroll(SelectionDirection::Next),
+        KeyCode::End => app.stick_agent_scroll_to_bottom(),
+        KeyCode::Enter => app.send_agent_message(),
+        KeyCode::Backspace => app.pop_agent_char(),
+        KeyCode::Char(character) => app.push_agent_char(character),
+        _ => {}
+    }
+}
+
 fn handle_search_key(app: &mut App, key_code: KeyCode) {
     match key_code {
         KeyCode::Tab | KeyCode::BackTab => app.toggle_search_asset_kind(),
@@ -153,6 +218,10 @@ fn handle_settings_key(app: &mut App, key_code: KeyCode) {
     }
 
     match key_code {
+        KeyCode::Left | KeyCode::Char('h') => {
+            app.adjust_settings_item(SelectionDirection::Previous)
+        }
+        KeyCode::Right | KeyCode::Char('l') => app.adjust_settings_item(SelectionDirection::Next),
         KeyCode::Up | KeyCode::Char('k') => {
             app.move_settings_selection(SelectionDirection::Previous)
         }
@@ -185,7 +254,6 @@ fn handle_watchlist_edit_key(app: &mut App, key_code: KeyCode) {
         KeyCode::Down | KeyCode::Char('j') => {
             app.move_watchlist_selection(SelectionDirection::Next)
         }
-        KeyCode::Char('a') => app.begin_watchlist_add(WatchlistKind::Stock),
         KeyCode::Char('c') => app.begin_watchlist_add(WatchlistKind::Crypto),
         KeyCode::Char('t') => app.begin_selected_watchlist_ticker_change(),
         KeyCode::Char('d') => app.delete_selected_watchlist_symbol(),

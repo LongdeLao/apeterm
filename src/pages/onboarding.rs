@@ -77,6 +77,10 @@ fn render_theme(frame: &mut Frame, app: &App) {
                 app.t(Key::AppThemeTransparent).to_string(),
                 app.theme_name == ThemeName::Transparent,
             ),
+            (
+                app.t(Key::AppThemeBloomberg).to_string(),
+                app.theme_name == ThemeName::Bloomberg,
+            ),
         ],
     );
 }
