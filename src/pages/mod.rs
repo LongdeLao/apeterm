@@ -1,2 +1,8 @@
+pub mod calendar;
 pub mod dashboard;
+pub mod fill;
+pub mod news;
+pub mod notes;
 pub mod onboarding;
+pub mod panel;
+pub mod watchlist;

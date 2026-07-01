@@ -66,7 +66,6 @@ fn render_theme(frame: &mut Frame, app: &App) {
     let title = match app.language {
         Language::English => "\u{25D0} theme",
         Language::German => " \u{24D0} theme",
-        
     };
 
     render_menu(
