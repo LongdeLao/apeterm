@@ -87,11 +87,22 @@ detect_target() {
     *) echo "error: unsupported OS: $os" >&2; exit 1 ;;
   esac
 
-  case "$arch" in
-    arm64|aarch64) arch="aarch64" ;;
-    x86_64) arch="x86_64" ;;
-    *) echo "error: unsupported architecture: $arch" >&2; exit 1 ;;
-  esac
+  if [[ "$os" == "apple-darwin" ]]; then
+    case "$arch" in
+      arm64|aarch64) arch="aarch64" ;;
+      x86_64)
+        echo "error: Intel macOS is not supported by this installer" >&2
+        echo "supported targets: Apple Silicon macOS, x86_64 Linux" >&2
+        exit 1
+        ;;
+      *) echo "error: unsupported architecture: $arch" >&2; exit 1 ;;
+    esac
+  else
+    case "$arch" in
+      x86_64) arch="x86_64" ;;
+      *) echo "error: unsupported architecture: $arch" >&2; exit 1 ;;
+    esac
+  fi
 
   printf '%s-%s\n' "$arch" "$os"
 }
