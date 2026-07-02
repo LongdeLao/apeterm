@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ApeTerm installer
+
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
   ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
