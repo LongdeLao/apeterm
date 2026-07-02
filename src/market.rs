@@ -1,6 +1,7 @@
 use std::{
+    env,
     io::{BufRead, BufReader},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::mpsc::{self, Receiver, Sender},
     thread,
@@ -12,6 +13,8 @@ use tungstenite::{Message, connect};
 
 const LOCAL_PYTHON: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.venv/bin/python");
 const YFINANCE_SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/yfinance_stream.py");
+const ENV_PYTHON: &str = "APETERM_PYTHON";
+const ENV_SCRIPT_DIR: &str = "APETERM_SCRIPT_DIR";
 
 #[derive(Debug, Clone)]
 pub enum MarketEvent {
@@ -144,7 +147,7 @@ fn spawn_yfinance_stream(sender: Sender<MarketEvent>, symbols: Vec<String>) {
 fn stream_yfinance_prices(sender: &Sender<MarketEvent>, symbols: &[String]) -> std::io::Result<()> {
     let mut child = Command::new(python_command())
         .arg("-u")
-        .arg(YFINANCE_SCRIPT)
+        .arg(yfinance_script())
         .args(symbols)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -169,12 +172,27 @@ fn stream_yfinance_prices(sender: &Sender<MarketEvent>, symbols: &[String]) -> s
     Ok(())
 }
 
-fn python_command() -> &'static str {
-    if Path::new(LOCAL_PYTHON).exists() {
-        LOCAL_PYTHON
-    } else {
-        "python3"
+fn python_command() -> String {
+    if let Ok(value) = env::var(ENV_PYTHON) {
+        if !value.trim().is_empty() {
+            return value;
+        }
     }
+    if Path::new(LOCAL_PYTHON).exists() {
+        LOCAL_PYTHON.to_string()
+    } else {
+        "python3".to_string()
+    }
+}
+
+fn yfinance_script() -> PathBuf {
+    if let Ok(value) = env::var(ENV_SCRIPT_DIR) {
+        let path = Path::new(value.trim()).join("yfinance_stream.py");
+        if path.exists() {
+            return path;
+        }
+    }
+    PathBuf::from(YFINANCE_SCRIPT)
 }
 
 fn parse_stock_message(text: &str) -> Option<MarketEvent> {

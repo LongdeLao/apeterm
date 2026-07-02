@@ -251,6 +251,7 @@ pub struct App {
     pub collapsed_watchlist_news: HashSet<String>,
     known_watchlist_news_symbols: HashSet<String>,
     last_news_refresh: Option<Instant>,
+    financial_juice_cooldown_until: Option<Instant>,
     pub agent_input: String,
     pub agent_messages: Vec<AgentMessage>,
     pub agent_loading: bool,
@@ -329,6 +330,7 @@ impl App {
             collapsed_watchlist_news: HashSet::new(),
             known_watchlist_news_symbols: HashSet::new(),
             last_news_refresh: None,
+            financial_juice_cooldown_until: None,
             agent_input: String::new(),
             agent_messages: Vec::new(),
             agent_loading: false,
@@ -982,7 +984,8 @@ impl App {
             stock_matchers: self.build_watchlist_matchers(WatchlistKind::Stock),
             crypto_matchers: self.build_watchlist_matchers(WatchlistKind::Crypto),
             enable_rss: self.config.news.enable_rss,
-            enable_financial_juice: self.config.news.enable_financial_juice,
+            enable_financial_juice: self.config.news.enable_financial_juice
+                && !self.financial_juice_in_cooldown(),
             enable_nasdaq: self.config.news.enable_nasdaq,
         };
         self.news_loading = true;
@@ -1029,6 +1032,7 @@ impl App {
                             None
                         }
                     });
+                    self.update_financial_juice_backoff();
                 }
                 Ok(NewsEvent::Error(error)) => {
                     self.news_loading = false;
@@ -1036,6 +1040,7 @@ impl App {
                     self.news_connection_status = "reconnecting...".to_string();
                     self.news_status =
                         Some(self.t(Key::NewsStatusError).replace("{error}", &error));
+                    self.update_financial_juice_backoff();
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -1043,6 +1048,7 @@ impl App {
                     self.news_receiver = None;
                     self.news_connection_status = "reconnecting...".to_string();
                     self.news_status = Some(self.t(Key::NewsStatusInterrupted).to_string());
+                    self.update_financial_juice_backoff();
                 }
             }
         }
@@ -1785,6 +1791,7 @@ impl App {
         self.collapsed_watchlist_news.clear();
         self.known_watchlist_news_symbols.clear();
         self.last_news_refresh = None;
+        self.financial_juice_cooldown_until = None;
         self.news_receiver = None;
         self.agent_input.clear();
         self.agent_messages.clear();
@@ -1899,6 +1906,9 @@ impl App {
 
     pub fn news_source_counts_summary(&self, max_sources: usize) -> String {
         if self.news_source_counts.is_empty() {
+            if let Some(remaining) = self.financial_juice_cooldown_remaining_minutes() {
+                return format!("sources: none  fj paused {remaining}m");
+            }
             return "sources: none".to_string();
         }
 
@@ -1912,7 +1922,11 @@ impl App {
         if remaining > 0 {
             parts.push(format!("+{remaining}"));
         }
-        format!("sources: {}", parts.join("  "))
+        let mut summary = format!("sources: {}", parts.join("  "));
+        if let Some(remaining) = self.financial_juice_cooldown_remaining_minutes() {
+            summary.push_str(&format!("  fj paused {remaining}m"));
+        }
+        summary
     }
 
     fn build_watchlist_matchers(&self, kind: WatchlistKind) -> Vec<WatchlistMatcher> {
@@ -1955,6 +1969,39 @@ impl App {
                 }
             })
             .collect()
+    }
+
+    fn financial_juice_in_cooldown(&self) -> bool {
+        self.financial_juice_cooldown_until
+            .is_some_and(|until| Instant::now() < until)
+    }
+
+    fn financial_juice_cooldown_remaining_minutes(&self) -> Option<u64> {
+        self.financial_juice_cooldown_until.and_then(|until| {
+            let now = Instant::now();
+            (until > now).then(|| ((until - now).as_secs() / 60).max(1))
+        })
+    }
+
+    fn update_financial_juice_backoff(&mut self) {
+        let hit_rate_limit = self
+            .news_status
+            .as_deref()
+            .is_some_and(|status| status.contains("FinancialJuice") && status.contains("429"));
+
+        if hit_rate_limit {
+            self.financial_juice_cooldown_until =
+                Some(Instant::now() + Duration::from_secs(30 * 60));
+            if self.news_items.is_empty() {
+                self.news_status =
+                    Some("FinancialJuice paused for 30m after 429; using other feeds.".to_string());
+            }
+        } else if self
+            .financial_juice_cooldown_until
+            .is_some_and(|until| Instant::now() >= until)
+        {
+            self.financial_juice_cooldown_until = None;
+        }
     }
 }
 

@@ -160,6 +160,11 @@ impl AppConfig {
             config.llm.api_key = Some(api_key);
         }
 
+        if should_migrate_legacy_news_feeds(&config.news.feeds) {
+            config.news.feeds = default_news_feeds();
+            let _ = config.save();
+        }
+
         Ok(config)
     }
 
@@ -360,6 +365,15 @@ fn default_enable_nasdaq() -> bool {
 
 fn default_news_refresh_interval_seconds() -> u64 {
     60
+}
+
+fn should_migrate_legacy_news_feeds(feeds: &[String]) -> bool {
+    !feeds.is_empty() && feeds.iter().all(|feed| is_legacy_news_feed(feed.as_str()))
+}
+
+fn is_legacy_news_feed(feed: &str) -> bool {
+    feed.contains("feeds.content.dowjones.io/public/rss/mw_")
+        || feed.contains("feeds.marketwatch.com/marketwatch/")
 }
 
 #[cfg(test)]

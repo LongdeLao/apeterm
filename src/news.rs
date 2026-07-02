@@ -511,9 +511,9 @@ fn parse_rss_item(
     feed_order: usize,
     item_order: usize,
 ) -> Option<NewsItem> {
-    let title = item.title()?.trim();
+    let raw_title = item.title()?.trim();
     let url = item.link()?.trim();
-    if title.is_empty() || url.is_empty() {
+    if raw_title.is_empty() || url.is_empty() {
         return None;
     }
 
@@ -522,21 +522,40 @@ fn parse_rss_item(
         return None;
     }
 
-    let source = item
-        .source()
-        .and_then(|source_meta| source_meta.title())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(source);
+    let description = item
+        .description()
+        .map(strip_html)
+        .filter(|value| !value.trim().is_empty());
+    let (title, inferred_source) = infer_title_source(raw_title);
     let source_url = item
         .source()
         .map(|source_meta| source_meta.url().trim())
         .filter(|value| !value.is_empty())
         .map(str::to_string);
+    let source = item
+        .source()
+        .and_then(|source_meta| source_meta.title())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(non_generic_source)
+        .or_else(|| {
+            source_url
+                .as_deref()
+                .and_then(source_domain)
+                .map(|domain| normalize_source(domain.as_str()))
+                .filter(|candidate| allowed_source_name(candidate.as_str()))
+        })
+        .or(inferred_source)
+        .or_else(|| {
+            description
+                .as_deref()
+                .and_then(infer_source_from_description)
+        })
+        .unwrap_or_else(|| source.to_string());
 
     Some(NewsItem {
         id: id.to_string(),
-        title: title.to_string(),
+        title,
         source: source.to_string(),
         source_url,
         author: item
@@ -546,10 +565,7 @@ fn parse_rss_item(
             .map(str::to_string),
         published_at: item.pub_date().and_then(parse_timestamp),
         url: url.to_string(),
-        description: item
-            .description()
-            .map(strip_html)
-            .filter(|value| !value.trim().is_empty()),
+        description,
         symbols: Vec::new(),
         relevant: false,
         category: NewsCategory::General,
@@ -558,6 +574,63 @@ fn parse_rss_item(
         feed_order,
         item_order,
     })
+}
+
+fn infer_title_source(title: &str) -> (String, Option<String>) {
+    let Some((headline, suffix)) = split_title_suffix(title) else {
+        return (title.to_string(), None);
+    };
+    let suffix = suffix.trim();
+    if suffix.is_empty() || suffix.len() > 48 || suffix.contains(':') {
+        return (title.to_string(), None);
+    }
+    let normalized = normalize_source(suffix);
+    if normalized == suffix || allowed_source_name(normalized.as_str()) {
+        return (headline.trim().to_string(), Some(normalized));
+    }
+    (title.to_string(), None)
+}
+
+fn split_title_suffix(title: &str) -> Option<(&str, &str)> {
+    [" - ", " | ", " — ", " – "]
+        .iter()
+        .find_map(|separator| title.rsplit_once(separator))
+}
+
+fn non_generic_source(source: &str) -> Option<String> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() || is_generic_feed_label(trimmed) {
+        None
+    } else {
+        Some(normalize_source(trimmed))
+    }
+}
+
+fn is_generic_feed_label(source: &str) -> bool {
+    matches!(
+        source.to_ascii_lowercase().as_str(),
+        "markets"
+            | "stocks"
+            | "economy"
+            | "earnings"
+            | "federal reserve"
+            | "ecb"
+            | "bloomberg markets"
+            | "wsj markets"
+            | "ft markets"
+            | "google news"
+    )
+}
+
+fn infer_source_from_description(description: &str) -> Option<String> {
+    let candidate = description
+        .rsplit("  ")
+        .next()
+        .or_else(|| description.rsplit(' ').next())
+        .unwrap_or_default()
+        .trim();
+    let normalized = normalize_source(candidate);
+    allowed_source_name(normalized.as_str()).then_some(normalized)
 }
 
 fn extract_rss_image_url(item: &rss::Item) -> Option<String> {
@@ -938,8 +1011,6 @@ fn normalize_source(source: &str) -> String {
         "Wall Street Journal".to_string()
     } else if lowercase.contains("financial times") || lowercase == "ft" {
         "Financial Times".to_string()
-    } else if lowercase.contains("marketwatch") {
-        "MarketWatch".to_string()
     } else if lowercase.contains("financialjuice") {
         "FinancialJuice".to_string()
     } else if lowercase.contains("nasdaq") {
@@ -1042,7 +1113,12 @@ fn is_whitelisted_item(item: &NewsItem) -> bool {
         return true;
     }
 
-    if domain_matches_whitelist(source_domain(item.source_url.as_deref()).as_deref()) {
+    if domain_matches_whitelist(
+        item.source_url
+            .as_deref()
+            .and_then(source_domain)
+            .as_deref(),
+    ) {
         return true;
     }
 
@@ -1063,7 +1139,6 @@ fn allowed_source_name(source: &str) -> bool {
             | "CNN"
             | "Wall Street Journal"
             | "Financial Times"
-            | "MarketWatch"
             | "Yahoo Finance"
             | "Investing.com"
             | "Seeking Alpha"
@@ -1089,7 +1164,6 @@ fn domain_matches_whitelist(domain: Option<&str>) -> bool {
         "cnn.com",
         "wsj.com",
         "ft.com",
-        "marketwatch.com",
         "finance.yahoo.com",
         "investing.com",
         "seekingalpha.com",
@@ -1105,12 +1179,10 @@ fn domain_matches_whitelist(domain: Option<&str>) -> bool {
     .any(|allowed| domain == *allowed || domain.ends_with(&format!(".{allowed}")))
 }
 
-fn source_domain(source_url: Option<&str>) -> Option<String> {
-    source_url.and_then(|value| {
-        Url::parse(value)
-            .ok()
-            .and_then(|url| url.host_str().map(str::to_string))
-    })
+fn source_domain(source_url: &str) -> Option<String> {
+    Url::parse(source_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
 }
 
 fn is_fresh_item(item: &NewsItem) -> bool {

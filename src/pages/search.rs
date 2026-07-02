@@ -26,7 +26,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),
+            Constraint::Length(5),
             Constraint::Min(3),
             Constraint::Length(1),
         ])
@@ -34,46 +34,56 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     let input = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled("\u{f002} ", Style::default().fg(theme.accent)),
+            Span::styled(" query ", Style::default().fg(theme.muted)),
+            Span::raw(" "),
             Span::styled(
                 app.search_query.as_str(),
-                Style::default().fg(theme.foreground),
+                Style::default()
+                    .fg(theme.foreground)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
+        Line::from(""),
         Line::from(vec![
             filter_span(
                 app.t(Key::SearchFilterStocks),
                 app.search_asset_kind == SearchAssetKind::Stocks,
-                theme.foreground,
-                theme.muted,
+                theme,
             ),
             Span::raw("  "),
             filter_span(
                 app.t(Key::SearchFilterEtfs),
                 app.search_asset_kind == SearchAssetKind::Etfs,
-                theme.foreground,
-                theme.muted,
+                theme,
             ),
         ]),
     ])
     .block(
         Block::default()
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(theme.accent)),
+            .borders(Borders::ALL)
+            .title(" search ")
+            .border_style(Style::default().fg(theme.muted)),
     );
     frame.render_widget(input, chunks[0]);
     if app.page == Page::Search {
         frame.set_cursor_position(Position::new(
             chunks[0]
                 .x
-                .saturating_add(2 + app.search_query.len() as u16),
-            chunks[0].y,
+                .saturating_add(8 + app.search_query.len() as u16),
+            chunks[0].y.saturating_add(1),
         ));
     }
 
     if let Some(message) = &app.search_message {
         frame.render_widget(
-            Paragraph::new(message.as_str()).style(Style::default().fg(theme.muted)),
+            Paragraph::new(message.as_str())
+                .style(Style::default().fg(theme.muted))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" results ")
+                        .border_style(Style::default().fg(theme.muted)),
+                ),
             chunks[1],
         );
     } else {
@@ -197,12 +207,19 @@ pub fn render_details(frame: &mut Frame, app: &App) {
 
 fn render_results(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
-    let visible_rows = area.height.saturating_sub(3).max(1) as usize;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" results ")
+        .border_style(Style::default().fg(theme.muted));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let visible_rows = inner.height.saturating_sub(2).max(1) as usize;
 
     if app.search_results.is_empty() {
         frame.render_widget(
             Paragraph::new(app.t(Key::SearchEmpty)).style(Style::default().fg(theme.muted)),
-            area,
+            inner,
         );
         return;
     }
@@ -220,11 +237,12 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
             let style = if selected {
                 Style::default()
                     .fg(theme.foreground)
+                    .bg(theme.surface)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(theme.foreground)
             };
-            let marker = if selected { ">" } else { " " };
+            let marker = if selected { "▌" } else { " " };
             let sector = result.sector.as_deref().unwrap_or("-");
             let industry = result.industry.as_deref().unwrap_or("");
             let meta = if industry.is_empty() {
@@ -234,10 +252,18 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             Row::new(vec![
-                Cell::from(marker),
-                Cell::from(result.symbol.clone()),
-                Cell::from(result.name.clone()),
-                Cell::from(meta),
+                Cell::from(Span::styled(marker, Style::default().fg(theme.accent))),
+                Cell::from(Span::styled(
+                    result.symbol.clone(),
+                    Style::default()
+                        .fg(theme.positive)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Cell::from(Span::styled(
+                    result.name.clone(),
+                    Style::default().fg(theme.foreground),
+                )),
+                Cell::from(Span::styled(meta, Style::default().fg(theme.muted))),
             ])
             .style(style)
         });
@@ -245,7 +271,7 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(area);
+        .split(inner);
     let table = Table::new(
         rows,
         [
@@ -262,7 +288,11 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
             app.t(Key::SearchHeaderName),
             app.t(Key::SearchHeaderSectorIndustry),
         ])
-        .style(Style::default().fg(theme.muted)),
+        .style(
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
     )
     .column_spacing(1);
     frame.render_widget(table, chunks[0]);
@@ -278,14 +308,16 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn filter_span(label: &str, active: bool, foreground: Color, muted: Color) -> Span<'static> {
+fn filter_span(label: &str, active: bool, theme: crate::theme::Theme) -> Span<'static> {
     if active {
         Span::styled(
-            format!("[{label}]"),
-            Style::default().fg(foreground).add_modifier(Modifier::BOLD),
+            format!(" {label} "),
+            Style::default()
+                .fg(theme.foreground)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )
     } else {
-        Span::styled(format!(" {label} "), Style::default().fg(muted))
+        Span::styled(format!(" {label} "), Style::default().fg(theme.muted))
     }
 }
 

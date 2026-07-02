@@ -1,12 +1,22 @@
 # ApeTerm
 
-## UI Localization
+## Install
 
-Static UI copy is localized through `src/i18n/keys.rs` and the flat JSON maps in
-`locales/`. Add a new string by creating a `Key` variant with a dotted
-snake-case `#[strum(serialize = "...")]` value, then add that exact key to every
-locale JSON file. Run `cargo run -- --check-locales` to verify completeness.
+1. Do this:
 
-To add a new locale, add `locales/<code>.json` with the same keys as
-`locales/en.json`. The build script embeds every locale JSON file with
-`include_str!`, so no Rust source changes are needed for additional locales.
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/apeterm/main/install.sh | bash
+```
+2. Run this:
+
+```bash
+apeterm
+```
+
+
+If it's not working then open a new terminal and run it again.
+
+What this script does:
+- puts `apeterm` on your path
+- installs the app runtime under `~/.local/share/apeterm`
+- sets up the private Python runtime ApeTerm uses for `yfinance`

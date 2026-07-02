@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_NAME="apeterm"
+PREFIX="${PREFIX:-$HOME/.local}"
+DEFAULT_BIN_DIR="$PREFIX/bin"
+BIN_DIR="${BIN_DIR:-}"
+SHARE_DIR="${SHARE_DIR:-$PREFIX/share/$APP_NAME}"
+SCRIPT_DIR="$SHARE_DIR/scripts"
+VERSION="${VERSION:-latest}"
+GITHUB_REPO="${GITHUB_REPO:-}"
+BUILD_FROM_SOURCE="${BUILD_FROM_SOURCE:-0}"
+INSTALL_PYTHON_DEPS="${INSTALL_PYTHON_DEPS:-1}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+REAL_BIN="$SHARE_DIR/$APP_NAME-bin"
+PATH_UPDATED=0
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "error: required command not found: $1" >&2
+    exit 1
+  }
+}
+
+pick_bin_dir() {
+  if [[ -n "${BIN_DIR:-}" ]]; then
+    return
+  fi
+
+  local candidate
+  IFS=':' read -r -a path_parts <<< "$PATH"
+  for candidate in "${path_parts[@]}"; do
+    [[ -n "$candidate" ]] || continue
+    [[ -d "$candidate" ]] || continue
+    [[ -w "$candidate" ]] || continue
+    BIN_DIR="$candidate"
+    return
+  done
+
+  BIN_DIR="$DEFAULT_BIN_DIR"
+}
+
+shell_profile() {
+  case "${SHELL:-}" in
+    */zsh) printf '%s\n' "$HOME/.zshrc" ;;
+    */bash) printf '%s\n' "$HOME/.bashrc" ;;
+    */fish) printf '%s\n' "$HOME/.config/fish/config.fish" ;;
+    *) printf '%s\n' "$HOME/.profile" ;;
+  esac
+}
+
+ensure_bin_dir_on_path() {
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) return 0 ;;
+  esac
+
+  local profile line
+  profile="$(shell_profile)"
+  mkdir -p "$(dirname "$profile")"
+
+  if [[ "$profile" == *"/config.fish" ]]; then
+    line="fish_add_path \"$BIN_DIR\""
+  else
+    line="export PATH=\"$BIN_DIR:\$PATH\""
+  fi
+
+  if [[ ! -f "$profile" ]] || ! grep -Fqx "$line" "$profile"; then
+    printf '\n%s\n' "$line" >> "$profile"
+  fi
+  PATH_UPDATED=1
+}
+
+detect_target() {
+  local os arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
+
+  case "$os" in
+    Darwin) os="apple-darwin" ;;
+    Linux) os="unknown-linux-gnu" ;;
+    *) echo "error: unsupported OS: $os" >&2; exit 1 ;;
+  esac
+
+  case "$arch" in
+    arm64|aarch64) arch="aarch64" ;;
+    x86_64) arch="x86_64" ;;
+    *) echo "error: unsupported architecture: $arch" >&2; exit 1 ;;
+  esac
+
+  printf '%s-%s\n' "$arch" "$os"
+}
+
+release_url() {
+  local target version_tag
+  target="$(detect_target)"
+  version_tag="$VERSION"
+  if [[ "$version_tag" != "latest" && "$version_tag" != v* ]]; then
+    version_tag="v$version_tag"
+  fi
+
+  if [[ -z "$GITHUB_REPO" ]]; then
+    echo "error: GITHUB_REPO must be set for prebuilt installs, e.g. GITHUB_REPO=owner/apeterm" >&2
+    exit 1
+  fi
+
+  if [[ "$VERSION" == "latest" ]]; then
+    printf 'https://github.com/%s/releases/latest/download/%s-%s.tar.gz\n' \
+      "$GITHUB_REPO" "$APP_NAME" "$target"
+  else
+    printf 'https://github.com/%s/releases/download/%s/%s-%s.tar.gz\n' \
+      "$GITHUB_REPO" "$version_tag" "$APP_NAME" "$target"
+  fi
+}
+
+install_python_deps() {
+  [[ "$INSTALL_PYTHON_DEPS" == "1" ]] || return 0
+
+  need_cmd "$PYTHON_BIN"
+  "$PYTHON_BIN" -m venv "$SHARE_DIR/.venv"
+  "$SHARE_DIR/.venv/bin/pip" install --upgrade pip >/dev/null
+  "$SHARE_DIR/.venv/bin/pip" install -r "$ROOT_DIR/scripts/requirements.txt" >/dev/null
+}
+
+install_support_files() {
+  mkdir -p "$SCRIPT_DIR"
+  install -m 0644 "$ROOT_DIR/scripts/yfinance_stream.py" "$SCRIPT_DIR/yfinance_stream.py"
+  install -m 0644 "$ROOT_DIR/scripts/yfinance_details.py" "$SCRIPT_DIR/yfinance_details.py"
+}
+
+install_wrapper() {
+  mkdir -p "$BIN_DIR"
+  cat > "$BIN_DIR/$APP_NAME" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export APETERM_SCRIPT_DIR="$SCRIPT_DIR"
+if [[ -x "$SHARE_DIR/.venv/bin/python" ]]; then
+  export APETERM_PYTHON="$SHARE_DIR/.venv/bin/python"
+fi
+exec "$REAL_BIN" "\$@"
+EOF
+  chmod +x "$BIN_DIR/$APP_NAME"
+}
+
+install_from_release() {
+  need_cmd curl
+  need_cmd tar
+
+  local tmp url
+  tmp="$(mktemp -d)"
+  url="$(release_url)"
+
+  mkdir -p "$BIN_DIR" "$SHARE_DIR"
+  echo "downloading $url"
+  curl -fL "$url" -o "$tmp/$APP_NAME.tar.gz"
+  tar -xzf "$tmp/$APP_NAME.tar.gz" -C "$tmp"
+
+  local binary
+  binary="$(find "$tmp" -type f -name "$APP_NAME" -perm -111 | head -n 1)"
+  if [[ -z "$binary" ]]; then
+    echo "error: release archive did not contain $APP_NAME" >&2
+    exit 1
+  fi
+
+  install -m 0755 "$binary" "$REAL_BIN"
+  install_support_files
+  install_python_deps
+  install_wrapper
+  rm -rf "$tmp"
+}
+
+install_from_source() {
+  need_cmd cargo
+  mkdir -p "$BIN_DIR" "$SHARE_DIR"
+  cd "$ROOT_DIR"
+  cargo build --release
+  install -m 0755 "$ROOT_DIR/target/release/$APP_NAME" "$REAL_BIN"
+  install_support_files
+  install_python_deps
+  install_wrapper
+}
+
+print_path_note() {
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *)
+      echo "note: $BIN_DIR is not currently on PATH" >&2
+      echo "add this to your shell profile:" >&2
+      echo "  export PATH=\"$BIN_DIR:\$PATH\"" >&2
+      ;;
+  esac
+}
+
+main() {
+  pick_bin_dir
+  if [[ "$BUILD_FROM_SOURCE" == "1" ]]; then
+    install_from_source
+  else
+    install_from_release
+  fi
+
+  ensure_bin_dir_on_path
+
+  echo "installed $APP_NAME to $BIN_DIR/$APP_NAME"
+  echo "runtime files in $SHARE_DIR"
+  if [[ "$INSTALL_PYTHON_DEPS" == "1" ]]; then
+    echo "installed python runtime deps to $SHARE_DIR/.venv"
+  fi
+  if [[ "$PATH_UPDATED" == "1" ]]; then
+    echo "restart your shell, then run: $APP_NAME"
+  else
+    echo "run: $APP_NAME"
+  fi
+}
+
+main "$@"

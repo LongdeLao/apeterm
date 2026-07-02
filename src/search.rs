@@ -2,14 +2,17 @@ use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use rusqlite::{Connection, OptionalExtension, Result, params};
 use serde::Deserialize;
 use std::{
+    env,
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
 const LOCAL_PYTHON: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.venv/bin/python");
 const YFINANCE_DETAILS_SCRIPT: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/yfinance_details.py");
+const ENV_PYTHON: &str = "APETERM_PYTHON";
+const ENV_SCRIPT_DIR: &str = "APETERM_SCRIPT_DIR";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchResult {
@@ -133,7 +136,7 @@ pub fn details(connection: &Connection, symbol: &str) -> Result<Option<Instrumen
 pub fn live_details(symbol: &str) -> Option<LiveInstrumentDetails> {
     let mut child = Command::new(python_command())
         .arg("-u")
-        .arg(YFINANCE_DETAILS_SCRIPT)
+        .arg(yfinance_details_script())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -241,12 +244,27 @@ fn merge_fuzzy_results(
     Ok(())
 }
 
-fn python_command() -> &'static str {
-    if Path::new(LOCAL_PYTHON).exists() {
-        LOCAL_PYTHON
-    } else {
-        "python3"
+fn python_command() -> String {
+    if let Ok(value) = env::var(ENV_PYTHON) {
+        if !value.trim().is_empty() {
+            return value;
+        }
     }
+    if Path::new(LOCAL_PYTHON).exists() {
+        LOCAL_PYTHON.to_string()
+    } else {
+        "python3".to_string()
+    }
+}
+
+fn yfinance_details_script() -> PathBuf {
+    if let Ok(value) = env::var(ENV_SCRIPT_DIR) {
+        let path = Path::new(value.trim()).join("yfinance_details.py");
+        if path.exists() {
+            return path;
+        }
+    }
+    PathBuf::from(YFINANCE_DETAILS_SCRIPT)
 }
 
 fn rows_to_search_results(
