@@ -196,11 +196,13 @@ install_support_files() {
   if [[ -n "$ROOT_DIR" ]]; then
     install -m 0644 "$ROOT_DIR/scripts/yfinance_stream.py" "$SCRIPT_DIR/yfinance_stream.py"
     install -m 0644 "$ROOT_DIR/scripts/yfinance_details.py" "$SCRIPT_DIR/yfinance_details.py"
+    install -m 0644 "$ROOT_DIR/scripts/house_ptr_extract.py" "$SCRIPT_DIR/house_ptr_extract.py"
     install -m 0644 "$ROOT_DIR/scripts/requirements.txt" "$SCRIPT_DIR/requirements.txt"
   else
     need_cmd curl
     curl -fsSL "$(raw_url scripts/yfinance_stream.py)" -o "$SCRIPT_DIR/yfinance_stream.py"
     curl -fsSL "$(raw_url scripts/yfinance_details.py)" -o "$SCRIPT_DIR/yfinance_details.py"
+    curl -fsSL "$(raw_url scripts/house_ptr_extract.py)" -o "$SCRIPT_DIR/house_ptr_extract.py"
     curl -fsSL "$(raw_url scripts/requirements.txt)" -o "$SCRIPT_DIR/requirements.txt"
   fi
 }

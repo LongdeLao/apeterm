@@ -39,9 +39,18 @@ pub struct InstrumentDetails {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+pub struct HistoryPoint {
+    pub ts: i64,
+    pub close: f64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct LiveInstrumentDetails {
     pub price: Option<f64>,
     pub previous_close: Option<f64>,
+    pub open: Option<f64>,
+    pub day_high: Option<f64>,
+    pub day_low: Option<f64>,
     pub market_cap: Option<f64>,
     pub avg_volume: Option<f64>,
     pub week_52_high: Option<f64>,
@@ -55,6 +64,8 @@ pub struct LiveInstrumentDetails {
     pub summary_de: Option<String>,
     pub country: Option<String>,
     pub website: Option<String>,
+    #[serde(default)]
+    pub history: Vec<HistoryPoint>,
 }
 
 pub fn search(

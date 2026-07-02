@@ -88,6 +88,7 @@
   "details.label.current_price": "current price",
   "details.label.change": "change",
   "details.label.previous_close": " prev close",
+  "details.label.open": "open",
   "details.label.week_high": " 52w high",
   "details.label.week_low": " 52w low",
   "details.label.market_cap": " mkt cap",

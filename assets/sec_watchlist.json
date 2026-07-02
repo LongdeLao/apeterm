@@ -14,5 +14,15 @@
   { "kind": "ceo", "name": "Lisa Su", "filer_cik": "0001405109", "issuer_ticker": "AMD", "subtitle": "AMD" },
   { "kind": "ceo", "name": "Alex Karp", "filer_cik": "0001823951", "issuer_ticker": "PLTR", "subtitle": "Palantir (PLTR)" },
   { "kind": "ceo", "name": "Andy Jassy", "filer_cik": "0001374545", "issuer_ticker": "AMZN", "subtitle": "Amazon (AMZN)" },
-  { "kind": "ceo", "name": "Sundar Pichai", "filer_cik": "0001534753", "issuer_ticker": "GOOGL", "subtitle": "Alphabet (GOOGL)" }
+  { "kind": "ceo", "name": "Sundar Pichai", "filer_cik": "0001534753", "issuer_ticker": "GOOGL", "subtitle": "Alphabet (GOOGL)" },
+  { "kind": "ceo", "name": "Nancy Pelosi", "filer_cik": "congress:nancy-pelosi", "issuer_ticker": null, "subtitle": "House" },
+  { "kind": "ceo", "name": "Dan Crenshaw", "filer_cik": "congress:dan-crenshaw", "issuer_ticker": null, "subtitle": "House" },
+  { "kind": "ceo", "name": "Josh Gottheimer", "filer_cik": "congress:josh-gottheimer", "issuer_ticker": null, "subtitle": "House" },
+  { "kind": "ceo", "name": "Ro Khanna", "filer_cik": "congress:ro-khanna", "issuer_ticker": null, "subtitle": "House" },
+  { "kind": "ceo", "name": "Marjorie Taylor Greene", "filer_cik": "congress:marjorie-taylor-greene", "issuer_ticker": null, "subtitle": "House" },
+  { "kind": "ceo", "name": "Tommy Tuberville", "filer_cik": "congress:tommy-tuberville", "issuer_ticker": null, "subtitle": "Senate" },
+  { "kind": "ceo", "name": "Mark Green", "filer_cik": "congress:mark-green", "issuer_ticker": null, "subtitle": "House" },
+  { "kind": "ceo", "name": "Debbie Wasserman Schultz", "filer_cik": "congress:debbie-wasserman-schultz", "issuer_ticker": null, "subtitle": "House" },
+  { "kind": "ceo", "name": "Pete Sessions", "filer_cik": "congress:pete-sessions", "issuer_ticker": null, "subtitle": "House" },
+  { "kind": "ceo", "name": "Susie Lee", "filer_cik": "congress:susie-lee", "issuer_ticker": null, "subtitle": "House" }
 ]

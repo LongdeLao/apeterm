@@ -1,9 +1,10 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
+    symbols,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
+    widgets::{Axis, Block, Borders, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -11,7 +12,7 @@ use crate::{
     app::{App, InputTarget, Page, SearchAssetKind},
     i18n::{Key, Locale},
     pages::fill::Fill,
-    search::LiveInstrumentDetails,
+    search::{HistoryPoint, LiveInstrumentDetails},
     theme::current_theme,
     ui,
 };
@@ -97,90 +98,229 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 pub fn render_details(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
-    render(frame, app);
-
-    let area = centered_percent_rect(ui::content_area(frame.area()), 88, 78);
+    let area = ui::content_area(frame.area());
     let Some(details) = &app.selected_details else {
         return;
     };
 
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled("\u{f1ad} ", Style::default().fg(theme.accent)),
+    let background = theme
+        .background
+        .unwrap_or(ratatui::style::Color::Rgb(24, 24, 24));
+
+    if let Some(background_fill) = theme.background {
+        frame.render_widget(Fill::new(background_fill), area);
+    }
+
+    let outer = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(background))
+        .border_style(Style::default().fg(theme.accent));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
+    if inner.width < 120 {
+        let root = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Min(0)])
+            .split(inner);
+        frame.render_widget(detail_header(details, theme), root[0]);
+
+        let body = root[1];
+        let stacked = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(8),
+                Constraint::Length(10),
+                Constraint::Min(12),
+                Constraint::Min(7),
+            ])
+            .split(body);
+
+        frame.render_widget(price_panel(app, theme), stacked[0]);
+        frame.render_widget(fundamentals_panel(details, app, theme), stacked[1]);
+        render_chart_panel(frame, app, theme, stacked[2]);
+        frame.render_widget(summary_panel(app, theme), stacked[3]);
+    } else {
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(68), Constraint::Percentage(32)])
+            .split(inner);
+        let chart_column = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(12), Constraint::Length(1)])
+            .split(columns[0]);
+        let sidebar = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Length(8),
+                Constraint::Length(10),
+                Constraint::Min(8),
+            ])
+            .split(columns[1]);
+
+        render_chart_panel(frame, app, theme, chart_column[0]);
+        frame.render_widget(
+            detail_header(details, theme).block(
+                Block::default()
+                    .borders(Borders::LEFT | Borders::BOTTOM)
+                    .border_style(Style::default().fg(theme.muted)),
+            ),
+            sidebar[0],
+        );
+        frame.render_widget(price_panel(app, theme), sidebar[1]);
+        frame.render_widget(fundamentals_panel(details, app, theme), sidebar[2]);
+        frame.render_widget(summary_panel(app, theme), sidebar[3]);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    details.exchange.as_deref().unwrap_or("-"),
+                    Style::default().fg(theme.muted),
+                ),
+                Span::raw("  "),
+                Span::styled(
+                    details.currency.as_deref().unwrap_or("-"),
+                    Style::default().fg(theme.muted),
+                ),
+            ])),
+            chart_column[1],
+        );
+    }
+}
+
+fn detail_header(
+    details: &crate::search::InstrumentDetails,
+    theme: crate::theme::Theme,
+) -> Paragraph<'_> {
+    let exchange = details.exchange.as_deref().unwrap_or("-");
+    let currency = details.currency.as_deref().unwrap_or("-");
+    Paragraph::new(Line::from(vec![
+        Span::styled(
+            format!(" {} ", details.symbol),
+            Style::default()
+                .fg(theme.foreground)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            details.name.clone(),
+            Style::default().fg(theme.foreground),
+        ),
+        Span::raw(" "),
+        Span::styled(
+            format!("{}   {}", exchange, currency),
+            Style::default().fg(theme.muted),
+        ),
+    ]))
+    .alignment(Alignment::Left)
+    .style(Style::default().bg(theme.background.unwrap_or_default()))
+}
+
+fn price_panel(app: &App, theme: crate::theme::Theme) -> Paragraph<'_> {
+    let mut lines = Vec::new();
+    if let Some(live) = &app.selected_live_details {
+        let price = live
+            .price
+            .map(|value| format!("${}", format_price(value)))
+            .unwrap_or_else(|| "-".to_string());
+        let (change_text, change_color) = match price_change(live) {
+            Some((absolute, percent)) => {
+                let sign = if absolute >= 0.0 { "+" } else { "" };
+                let color = if absolute >= 0.0 {
+                    theme.positive
+                } else {
+                    theme.negative
+                };
+                (format!("{sign}{absolute:.2} ({sign}{percent:.2}%)"), color)
+            }
+            None => ("-".to_string(), theme.muted),
+        };
+        lines.push(Line::from(vec![
             Span::styled(
-                details.symbol.as_str(),
+                price,
                 Style::default()
                     .fg(theme.foreground)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!("  {}", details.name),
-                Style::default().fg(theme.foreground),
-            ),
-        ]),
-        Line::from(""),
-    ];
+            Span::raw("  "),
+            Span::styled(change_text, Style::default().fg(change_color)),
+        ]));
+        lines.push(Line::from(""));
 
-    if let Some(live) = &app.selected_live_details {
-        lines.push(section_title("\u{f201}", app.t(Key::DetailsSectionQuote)));
-        lines.push(quote_line(live, app, theme.foreground, theme.muted));
-        lines.push(Line::from(""));
-        lines.push(section_title("\u{f02d}", app.t(Key::DetailsSectionSummary)));
-        if let Some(summary) = live_summary(live, &app.locale) {
-            for line in wrap_text(&summary, area.width.saturating_sub(6) as usize) {
-                lines.push(Line::from(Span::styled(
-                    line,
-                    Style::default().fg(theme.foreground),
-                )));
-            }
-        } else {
-            lines.push(Line::from(Span::styled(
-                app.t(Key::DetailsStatusNoSummary),
-                Style::default().fg(theme.muted),
-            )));
+        let rows: Vec<(&str, Option<String>)> = vec![
+            (
+                app.t(Key::DetailsLabelPreviousClose),
+                live.previous_close.map(|value| format!("${}", format_price(value))),
+            ),
+            (
+                app.t(Key::DetailsLabelOpen),
+                live.open.map(|value| format!("${}", format_price(value))),
+            ),
+            (
+                app.t(Key::DetailsLabelWeekHigh),
+                live.week_52_high.map(|value| format!("${}", format_price(value))),
+            ),
+            (
+                app.t(Key::DetailsLabelWeekLow),
+                live.week_52_low.map(|value| format!("${}", format_price(value))),
+            ),
+            (
+                app.t(Key::DetailsLabelAvgVolume),
+                live.avg_volume.map(format_large_number),
+            ),
+        ];
+        let label_width = rows
+            .iter()
+            .map(|(label, _)| UnicodeWidthStr::width(*label))
+            .max()
+            .unwrap_or(10)
+            .saturating_add(2);
+        for (label, value) in rows {
+            push_detail_row(&mut lines, label, value, label_width, theme.foreground, theme.muted);
         }
-        lines.push(Line::from(""));
-        lines.push(section_title(
-            "\u{f1de}",
-            app.t(Key::DetailsSectionFundamentals),
-        ));
-        let label_width = detail_label_width(app);
-        for (label, value) in fundamental_rows(live, app) {
-            push_detail_row(
-                &mut lines,
-                label,
-                value,
-                label_width,
-                theme.foreground,
-                theme.muted,
-            );
-        }
-        lines.push(Line::from(""));
     } else if app.live_details_loading {
-        lines.push(section_title("\u{f201}", app.t(Key::DetailsSectionQuote)));
-        lines.push(loading_quote_line(app, theme.muted));
-        lines.push(Line::from(""));
-        lines.push(section_title(
-            "\u{f1de}",
-            app.t(Key::DetailsSectionFundamentals),
-        ));
-        let label_width = detail_label_width(app);
-        for label in loading_fundamental_labels(app) {
-            push_detail_row(
-                &mut lines,
-                label,
-                Some("...".to_string()),
-                label_width,
-                theme.foreground,
-                theme.muted,
-            );
-        }
-        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "...",
+            Style::default()
+                .fg(theme.foreground)
+                .add_modifier(Modifier::BOLD),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            app.t(Key::DetailsStatusLoading),
+            Style::default().fg(theme.muted),
+        )));
     }
 
-    lines.push(section_title("\u{f129}", app.t(Key::DetailsSectionDetails)));
-    let label_width = detail_label_width(app);
-    for (label, value) in profile_rows(details, app) {
+    Paragraph::new(lines)
+        .style(Style::default().fg(theme.foreground).bg(theme.background.unwrap_or_default()))
+        .block(
+            Block::default()
+                .borders(Borders::TOP | Borders::LEFT | Borders::BOTTOM)
+                .title(format!(" {} ", app.t(Key::DetailsSectionQuote)))
+                .border_style(Style::default().fg(theme.muted)),
+        )
+}
+
+fn fundamentals_panel(
+    details: &crate::search::InstrumentDetails,
+    app: &App,
+    theme: crate::theme::Theme,
+) -> Paragraph<'static> {
+    let mut lines = Vec::new();
+    let rows = if let Some(live) = &app.selected_live_details {
+        compact_fundamental_rows(details, live, app)
+    } else if app.live_details_loading {
+        compact_loading_rows(app)
+    } else {
+        compact_profile_rows(details, app)
+    };
+    let label_width = rows
+        .iter()
+        .map(|(label, _)| UnicodeWidthStr::width(*label))
+        .max()
+        .unwrap_or(10)
+        .saturating_add(2);
+    for (label, value) in rows {
         push_detail_row(
             &mut lines,
             label,
@@ -190,23 +330,153 @@ pub fn render_details(frame: &mut Frame, app: &App) {
             theme.muted,
         );
     }
-
-    let background = theme
-        .background
-        .unwrap_or(ratatui::style::Color::Rgb(24, 24, 24));
-    let panel = Paragraph::new(lines)
-        .style(Style::default().fg(theme.foreground).bg(background))
-        .wrap(Wrap { trim: false })
+    Paragraph::new(lines)
+        .style(Style::default().fg(theme.foreground).bg(theme.background.unwrap_or_default()))
         .block(
             Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" {} ", app.t(Key::DetailsSectionDetails)))
-                .style(Style::default().bg(background))
-                .border_style(Style::default().fg(theme.accent)),
+                .borders(Borders::LEFT | Borders::BOTTOM)
+                .border_style(Style::default().fg(theme.muted)),
+        )
+}
+
+fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, area: Rect) {
+    let title = if app.live_details_loading {
+        format!(" {} ", app.t(Key::DetailsStatusLoading))
+    } else {
+        " PRICE CHART (3mo) ".to_string()
+    };
+    let block = Block::default()
+        .borders(Borders::TOP | Borders::RIGHT | Borders::BOTTOM)
+        .title(title)
+        .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD))
+        .border_style(Style::default().fg(theme.muted));
+
+    let history = app
+        .selected_live_details
+        .as_ref()
+        .map(|live| normalize_history(&live.history))
+        .unwrap_or_default();
+
+    if history.len() < 2 {
+        let message = if app.live_details_loading {
+            app.t(Key::DetailsStatusLoading)
+        } else {
+            "No chart data available"
+        };
+        frame.render_widget(
+            Paragraph::new(message)
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.muted).bg(theme.background.unwrap_or_default()))
+                .block(block),
+            area,
+        );
+        return;
+    }
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let chart_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(8), Constraint::Length(1)])
+        .split(inner);
+
+    let first = history.first().expect("history length checked");
+    let last = history.last().expect("history length checked");
+    let x_min = first.ts as f64;
+    let x_max = last.ts as f64;
+    let min = history.iter().map(|point| point.close).fold(f64::INFINITY, f64::min);
+    let max = history
+        .iter()
+        .map(|point| point.close)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let range = (max - min).abs();
+    let y_padding = if range > 0.0 {
+        (range * 0.06).max(0.5)
+    } else {
+        (min.abs() * 0.02).max(0.5)
+    };
+    let line_color = if last.close >= first.close {
+        theme.positive
+    } else {
+        theme.negative
+    };
+    let marker = if chart_chunks[0].width < 60 {
+        symbols::Marker::Dot
+    } else {
+        symbols::Marker::Braille
+    };
+    let points: Vec<(f64, f64)> = history
+        .iter()
+        .map(|point| (point.ts as f64, point.close))
+        .collect();
+    let dataset = Dataset::default()
+        .marker(marker)
+        .graph_type(GraphType::Line)
+        .style(
+            Style::default()
+                .fg(line_color)
+                .bg(theme.background.unwrap_or_default()),
+        )
+        .data(&points);
+
+    let chart = Chart::new(vec![dataset])
+        .x_axis(
+            Axis::default()
+                .style(Style::default().fg(theme.muted))
+                .bounds([x_min, x_max])
+                .labels(build_x_axis_labels(&history))
+                .labels_alignment(Alignment::Center),
+        )
+        .y_axis(
+            Axis::default()
+                .style(Style::default().fg(theme.muted))
+                .bounds([min - y_padding, max + y_padding])
+                .labels(build_y_axis_labels(min, max))
+                .labels_alignment(Alignment::Right),
         );
 
-    frame.render_widget(Clear, area);
-    frame.render_widget(panel, area);
+    frame.render_widget(chart, chart_chunks[0]);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!("low ${}", format_price(min)),
+                Style::default().fg(theme.muted),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format_ts_label(first.ts),
+                Style::default().fg(theme.muted),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format_ts_label(last.ts),
+                Style::default().fg(theme.muted),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("high ${}", format_price(max)),
+                Style::default().fg(theme.muted),
+            ),
+        ])),
+        chart_chunks[1],
+    );
+}
+
+fn summary_panel(app: &App, theme: crate::theme::Theme) -> Paragraph<'static> {
+    let summary = app
+        .selected_live_details
+        .as_ref()
+        .and_then(|live| live_summary(live, &app.locale))
+        .unwrap_or_else(|| app.t(Key::DetailsStatusNoSummary).to_string());
+    Paragraph::new(summary)
+        .style(Style::default().fg(theme.foreground).bg(theme.background.unwrap_or_default()))
+        .block(
+            Block::default()
+                .borders(Borders::RIGHT | Borders::BOTTOM)
+                .title(format!(" {} ", app.t(Key::DetailsSectionSummary)))
+                .border_style(Style::default().fg(theme.muted)),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: false })
 }
 
 fn render_results(frame: &mut Frame, app: &App, area: Rect) {
@@ -333,16 +603,6 @@ fn filter_span(label: &str, active: bool, theme: crate::theme::Theme) -> Span<'s
     }
 }
 
-fn section_title<'a>(icon: &'static str, title: &'a str) -> Line<'a> {
-    Line::from(vec![
-        Span::styled(
-            format!("{icon} "),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
-    ])
-}
-
 fn push_detail_row(
     lines: &mut Vec<Line<'_>>,
     label: &str,
@@ -360,149 +620,63 @@ fn push_detail_row(
     ]));
 }
 
-fn quote_line<'a>(
-    live: &LiveInstrumentDetails,
-    app: &'a App,
-    foreground: Color,
-    muted: Color,
-) -> Line<'a> {
-    let price = live
-        .price
-        .map(format_price)
-        .unwrap_or_else(|| "-".to_string());
-    let change = price_change(live);
-    let (change_text, change_color) = match change {
-        Some((absolute, percent)) => {
-            let sign = if absolute >= 0.0 { "+" } else { "" };
-            let color = if absolute >= 0.0 {
-                Color::LightGreen
-            } else {
-                Color::LightRed
-            };
-            (format!("{sign}{absolute:.2} ({sign}{percent:.2}%)"), color)
-        }
-        None => ("-".to_string(), muted),
-    };
-
-    let current_price_width = app.i18n.width(Key::DetailsLabelCurrentPrice).max(20);
-    let change_width = app.i18n.width(Key::DetailsLabelChange).max(12);
-
-    Line::from(vec![
-        Span::styled(
-            format!(
-                "{}",
-                pad_right(app.t(Key::DetailsLabelCurrentPrice), current_price_width)
-            ),
-            Style::default().fg(muted),
-        ),
-        Span::styled(
-            format!("{price:<14}"),
-            Style::default().fg(foreground).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            pad_right(app.t(Key::DetailsLabelChange), change_width),
-            Style::default().fg(muted),
-        ),
-        Span::styled(change_text, Style::default().fg(change_color)),
-    ])
-}
-
-fn loading_quote_line<'a>(app: &'a App, muted: Color) -> Line<'a> {
-    let current_price_width = app.i18n.width(Key::DetailsLabelCurrentPrice).max(20);
-    let change_width = app.i18n.width(Key::DetailsLabelChange).max(12);
-
-    Line::from(vec![
-        Span::styled(
-            pad_right(app.t(Key::DetailsLabelCurrentPrice), current_price_width),
-            Style::default().fg(muted),
-        ),
-        Span::styled(format!("{:<14}", "..."), Style::default().fg(muted)),
-        Span::styled(
-            pad_right(app.t(Key::DetailsLabelChange), change_width),
-            Style::default().fg(muted),
-        ),
-        Span::styled("-", Style::default().fg(muted)),
-    ])
-}
-
-fn fundamental_rows<'a>(
-    live: &LiveInstrumentDetails,
+fn compact_fundamental_rows<'a>(
+    details: &'a crate::search::InstrumentDetails,
+    live: &'a LiveInstrumentDetails,
     app: &'a App,
 ) -> Vec<(&'a str, Option<String>)> {
     vec![
-        (
-            app.t(Key::DetailsLabelPreviousClose),
-            live.previous_close.map(format_price),
-        ),
-        (
-            app.t(Key::DetailsLabelWeekHigh),
-            live.week_52_high.map(format_price),
-        ),
-        (
-            app.t(Key::DetailsLabelWeekLow),
-            live.week_52_low.map(format_price),
-        ),
         (
             app.t(Key::DetailsLabelMarketCap),
             live.market_cap.map(format_large_number),
         ),
-        (
-            app.t(Key::DetailsLabelAvgVolume),
-            live.avg_volume.map(format_large_number),
-        ),
-        (
-            app.t(Key::DetailsLabelPeRatio),
-            live.trailing_pe.map(format_ratio),
-        ),
-        (
-            app.t(Key::DetailsLabelForwardPe),
-            live.forward_pe.map(format_ratio),
-        ),
+        (app.t(Key::DetailsLabelPeRatio), live.trailing_pe.map(format_ratio)),
         (
             app.t(Key::DetailsLabelDividendYield),
             live.dividend_yield.map(format_percent),
         ),
-        (
-            app.t(Key::DetailsLabelEarnings),
-            live.next_earnings_days.map(|days| format_days(days, app)),
-        ),
         (app.t(Key::DetailsLabelBeta), live.beta.map(format_ratio)),
         (app.t(Key::DetailsLabelCountry), live.country.clone()),
-        (app.t(Key::DetailsLabelWebsite), live.website.clone()),
+        (app.t(Key::DetailsLabelSector), details.sector.clone()),
+        (app.t(Key::DetailsLabelIndustry), details.industry.clone()),
+        (app.t(Key::DetailsLabelExchange), details.exchange.clone()),
     ]
 }
 
-fn profile_rows<'a>(
-    details: &crate::search::InstrumentDetails,
+fn compact_loading_rows(app: &App) -> Vec<(&str, Option<String>)> {
+    vec![
+        (app.t(Key::DetailsLabelMarketCap), Some("...".to_string())),
+        (app.t(Key::DetailsLabelPeRatio), Some("...".to_string())),
+        (app.t(Key::DetailsLabelDividendYield), Some("...".to_string())),
+        (app.t(Key::DetailsLabelBeta), Some("...".to_string())),
+        (app.t(Key::DetailsLabelCountry), Some("...".to_string())),
+        (app.t(Key::DetailsLabelSector), Some("...".to_string())),
+        (app.t(Key::DetailsLabelIndustry), Some("...".to_string())),
+        (app.t(Key::DetailsLabelExchange), Some("...".to_string())),
+    ]
+}
+
+fn compact_profile_rows<'a>(
+    details: &'a crate::search::InstrumentDetails,
     app: &'a App,
 ) -> Vec<(&'a str, Option<String>)> {
     vec![
-        (app.t(Key::DetailsLabelExchange), details.exchange.clone()),
-        (app.t(Key::DetailsLabelType), details.asset_type.clone()),
         (app.t(Key::DetailsLabelSector), details.sector.clone()),
         (app.t(Key::DetailsLabelIndustry), details.industry.clone()),
+        (app.t(Key::DetailsLabelCountry), None),
+        (app.t(Key::DetailsLabelExchange), details.exchange.clone()),
         (app.t(Key::DetailsLabelCurrency), details.currency.clone()),
-        (
-            app.t(Key::DetailsLabelActive),
-            Some(details.active.to_string()),
-        ),
-        (
-            app.t(Key::DetailsLabelUpdated),
-            details.last_updated.clone(),
-        ),
+        (app.t(Key::DetailsLabelType), details.asset_type.clone()),
+        (app.t(Key::DetailsLabelActive), Some(details.active.to_string())),
+        (app.t(Key::DetailsLabelUpdated), details.last_updated.clone()),
     ]
 }
 
-fn loading_fundamental_labels(app: &App) -> Vec<&str> {
-    vec![
-        app.t(Key::DetailsLabelPreviousClose),
-        app.t(Key::DetailsLabelWeekHigh),
-        app.t(Key::DetailsLabelWeekLow),
-        app.t(Key::DetailsLabelMarketCap),
-        app.t(Key::DetailsLabelAvgVolume),
-        app.t(Key::DetailsLabelPeRatio),
-        app.t(Key::DetailsLabelDividendYield),
-    ]
+fn normalize_history(history: &[HistoryPoint]) -> Vec<HistoryPoint> {
+    let mut normalized = history.to_vec();
+    normalized.sort_by_key(|point| point.ts);
+    normalized.dedup_by(|left, right| left.ts == right.ts);
+    normalized
 }
 
 fn price_change(live: &LiveInstrumentDetails) -> Option<(f64, f64)> {
@@ -523,25 +697,6 @@ fn live_summary(live: &LiveInstrumentDetails, locale: &Locale) -> Option<String>
     }
 }
 
-fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for word in text.split_whitespace() {
-        if !current.is_empty() && current.len() + word.len() + 1 > width {
-            lines.push(current);
-            current = String::new();
-        }
-        if !current.is_empty() {
-            current.push(' ');
-        }
-        current.push_str(word);
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
-}
-
 fn format_price(value: f64) -> String {
     format!("{value:.2}")
 }
@@ -554,9 +709,67 @@ fn format_percent(value: f64) -> String {
     format!("{value:.2}%")
 }
 
-fn format_days(value: i64, app: &App) -> String {
-    app.t(Key::DetailsValueDays)
-        .replace("{count}", &value.to_string())
+fn format_axis_price(value: f64, range: f64, precision: usize) -> String {
+    if range >= 100.0 && precision == 0 {
+        format!("{value:.0}")
+    } else {
+        format!("{value:.precision$}")
+    }
+}
+
+fn build_y_axis_labels(min: f64, max: f64) -> Vec<Line<'static>> {
+    let range = (max - min).abs();
+    let values = [
+        min,
+        min + range * 0.25,
+        min + range * 0.5,
+        min + range * 0.75,
+        max,
+    ];
+    let mut precision = if range >= 100.0 {
+        0
+    } else if range >= 10.0 {
+        1
+    } else {
+        2
+    };
+    let labels = loop {
+        let rendered: Vec<String> = values
+            .iter()
+            .map(|value| format_axis_price(*value, range, precision))
+            .collect();
+        let mut deduped = rendered.clone();
+        deduped.sort();
+        deduped.dedup();
+        if deduped.len() == rendered.len() || precision >= 4 {
+            break rendered;
+        }
+        precision += 1;
+    };
+    labels.into_iter().map(Line::from).collect()
+}
+
+fn build_x_axis_labels(history: &[HistoryPoint]) -> Vec<Line<'static>> {
+    if history.is_empty() {
+        return vec![Line::from("-"), Line::from("-"), Line::from("-")];
+    }
+    let mid = history.len() / 2;
+    vec![
+        Line::from(format_ts_label(history[0].ts)),
+        Line::from(format_ts_label(history[mid].ts)),
+        Line::from(format_ts_label(history[history.len() - 1].ts)),
+    ]
+}
+
+fn format_ts_label(ts: i64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0)
+        .map(|datetime| {
+            datetime
+                .with_timezone(&chrono::Local)
+                .format("%b %-d")
+                .to_string()
+        })
+        .unwrap_or_else(|| "-".to_string())
 }
 
 fn search_symbol_column_width(app: &App) -> u16 {
@@ -564,36 +777,6 @@ fn search_symbol_column_width(app: &App) -> u16 {
         .width(Key::SearchHeaderSymbol)
         .max(8)
         .saturating_add(1) as u16
-}
-
-fn detail_label_width(app: &App) -> usize {
-    [
-        Key::DetailsLabelPreviousClose,
-        Key::DetailsLabelWeekHigh,
-        Key::DetailsLabelWeekLow,
-        Key::DetailsLabelMarketCap,
-        Key::DetailsLabelAvgVolume,
-        Key::DetailsLabelPeRatio,
-        Key::DetailsLabelForwardPe,
-        Key::DetailsLabelDividendYield,
-        Key::DetailsLabelEarnings,
-        Key::DetailsLabelBeta,
-        Key::DetailsLabelCountry,
-        Key::DetailsLabelWebsite,
-        Key::DetailsLabelExchange,
-        Key::DetailsLabelType,
-        Key::DetailsLabelSector,
-        Key::DetailsLabelIndustry,
-        Key::DetailsLabelCurrency,
-        Key::DetailsLabelActive,
-        Key::DetailsLabelUpdated,
-    ]
-    .into_iter()
-    .map(|key| app.i18n.width(key))
-    .max()
-    .unwrap_or(20)
-    .max(20)
-    .saturating_add(2)
 }
 
 fn pad_right(value: &str, width: usize) -> String {
@@ -625,22 +808,4 @@ fn visible_scroll_start(app: &App, visible_rows: usize) -> usize {
         scroll = app.search_selection + 1 - visible_rows;
     }
     scroll
-}
-
-fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width: width.min(area.width),
-        height: height.min(area.height),
-    }
-}
-
-fn centered_percent_rect(area: Rect, width_percent: u16, height_percent: u16) -> Rect {
-    let width = area.width.saturating_mul(width_percent).saturating_div(100);
-    let height = area
-        .height
-        .saturating_mul(height_percent)
-        .saturating_div(100);
-    centered_rect(area, width.max(80), height.max(24))
 }

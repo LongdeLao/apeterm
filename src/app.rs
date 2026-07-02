@@ -144,6 +144,7 @@ pub enum NotesFilterTab {
 pub enum SecTab {
     Institutional,
     Ceos,
+    Congress,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,6 +312,7 @@ pub struct App {
     pub sec_tab: SecTab,
     pub sec_institutional_selection: usize,
     pub sec_ceo_selection: usize,
+    pub sec_congress_selection: usize,
     pub sec_status: Option<String>,
     pub sec_loading: bool,
     sec_receiver: Option<Receiver<SecEvent>>,
@@ -407,6 +409,7 @@ impl App {
             sec_tab: SecTab::Institutional,
             sec_institutional_selection: 0,
             sec_ceo_selection: 0,
+            sec_congress_selection: 0,
             sec_status: None,
             sec_loading: false,
             sec_receiver: None,
@@ -1454,12 +1457,12 @@ impl App {
 
     pub fn cycle_sec_tab(&mut self, direction: SelectionDirection) {
         self.sec_tab = match (self.sec_tab, direction) {
-            (SecTab::Institutional, SelectionDirection::Previous | SelectionDirection::Next) => {
-                SecTab::Ceos
-            }
-            (SecTab::Ceos, SelectionDirection::Previous | SelectionDirection::Next) => {
-                SecTab::Institutional
-            }
+            (SecTab::Institutional, SelectionDirection::Previous) => SecTab::Congress,
+            (SecTab::Institutional, SelectionDirection::Next) => SecTab::Ceos,
+            (SecTab::Ceos, SelectionDirection::Previous) => SecTab::Institutional,
+            (SecTab::Ceos, SelectionDirection::Next) => SecTab::Congress,
+            (SecTab::Congress, SelectionDirection::Previous) => SecTab::Ceos,
+            (SecTab::Congress, SelectionDirection::Next) => SecTab::Institutional,
         };
     }
 
@@ -1468,6 +1471,7 @@ impl App {
         let selection = match self.sec_tab {
             SecTab::Institutional => &mut self.sec_institutional_selection,
             SecTab::Ceos => &mut self.sec_ceo_selection,
+            SecTab::Congress => &mut self.sec_congress_selection,
         };
         match direction {
             SelectionDirection::Previous => {
@@ -1483,16 +1487,17 @@ impl App {
         match self.sec_tab {
             SecTab::Institutional => self.sec_institutional_selection,
             SecTab::Ceos => self.sec_ceo_selection,
+            SecTab::Congress => self.sec_congress_selection,
         }
     }
 
     pub fn selected_sec_entity_id(&self) -> Option<i64> {
         let connection = db::open(&self.ticker_db_path).ok()?;
-        let kind = match self.sec_tab {
-            SecTab::Institutional => EntityKind::Institution,
-            SecTab::Ceos => EntityKind::Ceo,
+        let entities = match self.sec_tab {
+            SecTab::Institutional => db::sec_repo::list_entities(&connection, EntityKind::Institution).ok()?,
+            SecTab::Ceos => db::sec_repo::list_ceo_entities(&connection, false).ok()?,
+            SecTab::Congress => db::sec_repo::list_ceo_entities(&connection, true).ok()?,
         };
-        let entities = db::sec_repo::list_entities(&connection, kind).ok()?;
         let index = self.active_sec_selection().min(entities.len().saturating_sub(1));
         entities.get(index).map(|entity| entity.id)
     }
@@ -1501,11 +1506,11 @@ impl App {
         let Ok(connection) = db::open(&self.ticker_db_path) else {
             return 0;
         };
-        let kind = match self.sec_tab {
-            SecTab::Institutional => EntityKind::Institution,
-            SecTab::Ceos => EntityKind::Ceo,
-        };
-        db::sec_repo::list_entities(&connection, kind)
+        match self.sec_tab {
+            SecTab::Institutional => db::sec_repo::list_entities(&connection, EntityKind::Institution),
+            SecTab::Ceos => db::sec_repo::list_ceo_entities(&connection, false),
+            SecTab::Congress => db::sec_repo::list_ceo_entities(&connection, true),
+        }
             .map(|entities| entities.len())
             .unwrap_or(0)
     }

@@ -52,6 +52,26 @@ impl SecClient {
         self.request(url)?.text().map_err(|error| error.to_string())
     }
 
+    pub fn get_bytes(&self, url: &str) -> Result<Vec<u8>, String> {
+        self.request(url)?
+            .bytes()
+            .map(|bytes| bytes.to_vec())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn post_form(&self, url: &str, params: &[(String, String)], referer: &str) -> Result<String, String> {
+        let _tokens = self.acquire_token();
+        self.http
+            .post(url)
+            .header(reqwest::header::REFERER, referer)
+            .form(params)
+            .send()
+            .and_then(|response| response.error_for_status())
+            .map_err(|error| error.to_string())?
+            .text()
+            .map_err(|error| error.to_string())
+    }
+
     fn request(&self, url: &str) -> Result<reqwest::blocking::Response, String> {
         let _tokens = self.acquire_token();
         self.http

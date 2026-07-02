@@ -130,6 +130,25 @@ pub fn initialize(connection: &Connection) -> Result<()> {
           accession_no TEXT NOT NULL UNIQUE
         );
 
+        CREATE TABLE IF NOT EXISTS congress_transactions (
+          id INTEGER PRIMARY KEY,
+          entity_id INTEGER NOT NULL REFERENCES sec_entities(id),
+          filing_id TEXT NOT NULL,
+          transaction_index INTEGER NOT NULL,
+          chamber TEXT NOT NULL,
+          source_url TEXT NOT NULL,
+          filed_at TEXT,
+          transaction_date TEXT NOT NULL,
+          notification_date TEXT,
+          owner_code TEXT,
+          asset_name TEXT NOT NULL,
+          ticker TEXT,
+          transaction_type TEXT NOT NULL,
+          amount_range TEXT NOT NULL,
+          description TEXT,
+          UNIQUE(entity_id, filing_id, transaction_index)
+        );
+
         CREATE TABLE IF NOT EXISTS sec_sync_state (
           entity_id INTEGER PRIMARY KEY REFERENCES sec_entities(id),
           last_accession_seen TEXT,

@@ -88,6 +88,7 @@
   "details.label.current_price": "aktueller Kurs",
   "details.label.change": "Veränderung",
   "details.label.previous_close": " Schlusskurs",
+  "details.label.open": "Eröffnung",
   "details.label.week_high": " 52W-Hoch",
   "details.label.week_low": " 52W-Tief",
   "details.label.market_cap": " Marktkap.",

@@ -212,6 +212,8 @@ pub enum Key {
     DetailsLabelChange,
     #[strum(serialize = "details.label.previous_close")]
     DetailsLabelPreviousClose,
+    #[strum(serialize = "details.label.open")]
+    DetailsLabelOpen,
     #[strum(serialize = "details.label.week_high")]
     DetailsLabelWeekHigh,
     #[strum(serialize = "details.label.week_low")]

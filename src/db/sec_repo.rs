@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::sec::types::{
-    EntityKind, HoldingDelta, HoldingDeltaKind, HoldingRow, InsiderTx, SecEntity,
+    CongressTx, EntityKind, HoldingDelta, HoldingDeltaKind, HoldingRow, InsiderTx, SecEntity,
 };
 
 pub fn list_entities(connection: &Connection, kind: EntityKind) -> rusqlite::Result<Vec<SecEntity>> {
@@ -16,6 +16,37 @@ pub fn list_entities(connection: &Connection, kind: EntityKind) -> rusqlite::Res
         ",
     )?;
     let rows = statement.query_map([kind.as_db_str()], map_entity)?;
+    rows.collect()
+}
+
+pub fn list_ceo_entities(
+    connection: &Connection,
+    congress_only: bool,
+) -> rusqlite::Result<Vec<SecEntity>> {
+    let comparator = if congress_only { "LIKE" } else { "NOT LIKE" };
+    let mut statement = connection.prepare(&format!(
+        "
+        SELECT id, kind, name, filer_cik, issuer_ticker, subtitle
+        FROM sec_entities
+        WHERE kind = 'ceo' AND filer_cik {comparator} 'congress:%'
+        ORDER BY
+          CASE
+            WHEN filer_cik = 'congress:nancy-pelosi' THEN 0
+            WHEN filer_cik = 'congress:dan-crenshaw' THEN 1
+            WHEN filer_cik = 'congress:josh-gottheimer' THEN 2
+            WHEN filer_cik = 'congress:ro-khanna' THEN 3
+            WHEN filer_cik = 'congress:marjorie-taylor-greene' THEN 4
+            WHEN filer_cik = 'congress:tommy-tuberville' THEN 5
+            WHEN filer_cik = 'congress:mark-green' THEN 6
+            WHEN filer_cik = 'congress:debbie-wasserman-schultz' THEN 7
+            WHEN filer_cik = 'congress:pete-sessions' THEN 8
+            WHEN filer_cik = 'congress:susie-lee' THEN 9
+            ELSE 999
+          END,
+          name
+        "
+    ))?;
+    let rows = statement.query_map([], map_entity)?;
     rows.collect()
 }
 
@@ -172,6 +203,40 @@ pub fn recent_insider_txs(
     rows.collect()
 }
 
+pub fn recent_congress_txs(
+    connection: &Connection,
+    entity_id: i64,
+    limit: usize,
+) -> rusqlite::Result<Vec<CongressTx>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT chamber, source_url, filed_at, transaction_date, notification_date, owner_code,
+               asset_name, ticker, transaction_type, amount_range, description, filing_id
+        FROM congress_transactions
+        WHERE entity_id = ?1
+        ORDER BY transaction_date DESC, filing_id DESC, transaction_index ASC
+        LIMIT ?2
+        ",
+    )?;
+    let rows = statement.query_map(params![entity_id, limit as i64], |row| {
+        Ok(CongressTx {
+            chamber: row.get(0)?,
+            source_url: row.get(1)?,
+            filed_at: row.get(2)?,
+            transaction_date: row.get(3)?,
+            notification_date: row.get(4)?,
+            owner_code: row.get(5)?,
+            asset_name: row.get(6)?,
+            ticker: row.get(7)?,
+            transaction_type: row.get(8)?,
+            amount_range: row.get(9)?,
+            description: row.get(10)?,
+            filing_id: row.get(11)?,
+        })
+    })?;
+    rows.collect()
+}
+
 pub fn last_accession_seen(connection: &Connection, entity_id: i64) -> rusqlite::Result<Option<String>> {
     connection
         .query_row(
@@ -203,6 +268,25 @@ pub fn latest_transaction_code(
             FROM insider_transactions
             WHERE entity_id = ?1
             ORDER BY transaction_date DESC, accession_no DESC
+            LIMIT 1
+            ",
+            [entity_id],
+            |row| row.get(0),
+        )
+        .optional()
+}
+
+pub fn latest_congress_transaction_type(
+    connection: &Connection,
+    entity_id: i64,
+) -> rusqlite::Result<Option<String>> {
+    connection
+        .query_row(
+            "
+            SELECT transaction_type
+            FROM congress_transactions
+            WHERE entity_id = ?1
+            ORDER BY transaction_date DESC, filing_id DESC, transaction_index ASC
             LIMIT 1
             ",
             [entity_id],
@@ -278,4 +362,3 @@ fn map_entity(row: &rusqlite::Row<'_>) -> rusqlite::Result<SecEntity> {
         subtitle: row.get(5)?,
     })
 }
-

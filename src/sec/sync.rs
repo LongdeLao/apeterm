@@ -1,5 +1,12 @@
+use chrono::Datelike;
+use regex::Regex;
 use rusqlite::{Connection, params};
 use serde::Deserialize;
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
 
 use crate::{
     config::SecConfig,
@@ -9,9 +16,14 @@ use crate::{
         form4::parse_form4,
         submissions::new_accessions,
         thirteenf::parse_information_table,
-        types::{EntityKind, ParsedHolding, ParsedInsiderTx, SecEntity},
+        types::{EntityKind, ParsedCongressFiling, ParsedHolding, ParsedInsiderTx, SecEntity},
     },
 };
+
+const LOCAL_PYTHON: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.venv/bin/python");
+const HOUSE_PTR_SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/house_ptr_extract.py");
+const ENV_PYTHON: &str = "APETERM_PYTHON";
+const ENV_SCRIPT_DIR: &str = "APETERM_SCRIPT_DIR";
 
 #[derive(Debug, Deserialize)]
 struct FilingIndex {
@@ -75,6 +87,10 @@ fn sync_single_entity(
     client: &SecClient,
     entity: &SecEntity,
 ) -> Result<(), String> {
+    if entity.kind == EntityKind::Ceo && entity.filer_cik.starts_with("congress:") {
+        return sync_congress_entity(connection, client, entity);
+    }
+
     maybe_reset_institution_backfill(connection, entity)?;
     let last_seen = crate::db::sec_repo::last_accession_seen(connection, entity.id)
         .map_err(|error| error.to_string())?;
@@ -131,6 +147,269 @@ fn sync_single_entity(
         .map_err(|error| error.to_string())?;
 
     Ok(())
+}
+
+fn sync_congress_entity(
+    connection: &Connection,
+    client: &SecClient,
+    entity: &SecEntity,
+) -> Result<(), String> {
+    if entity.subtitle.as_deref() != Some("House") {
+        let now = chrono::Utc::now().to_rfc3339();
+        connection
+            .execute(
+                "
+                INSERT INTO sec_sync_state(entity_id, last_accession_seen, last_polled_at)
+                VALUES (?1, NULL, ?2)
+                ON CONFLICT(entity_id) DO UPDATE SET
+                  last_polled_at = excluded.last_polled_at
+                ",
+                params![entity.id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    let current_year = chrono::Utc::now().year();
+    let years = [current_year, current_year - 1];
+    let mut latest_filing_id = None;
+
+    for year in years {
+        let filings = search_house_ptrs(client, entity, year)?;
+        for filing in filings {
+            let pdf_bytes = client.get_bytes(&filing.source_url)?;
+            let parsed = parse_house_ptr_pdf(&pdf_bytes)?;
+            upsert_congress_transactions(connection, entity, &filing, parsed)?;
+            if latest_filing_id
+                .as_ref()
+                .is_none_or(|existing| filing.filing_id > *existing)
+            {
+                latest_filing_id = Some(filing.filing_id.clone());
+            }
+        }
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    connection
+        .execute(
+            "
+            INSERT INTO sec_sync_state(entity_id, last_accession_seen, last_polled_at)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(entity_id) DO UPDATE SET
+              last_accession_seen = excluded.last_accession_seen,
+              last_polled_at = excluded.last_polled_at
+            ",
+            params![entity.id, latest_filing_id, now],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct HouseSearchResult {
+    filing_id: String,
+    source_url: String,
+}
+
+fn search_house_ptrs(
+    client: &SecClient,
+    entity: &SecEntity,
+    year: i32,
+) -> Result<Vec<HouseSearchResult>, String> {
+    let search_html = client.get_text("https://disclosures-clerk.house.gov/FinancialDisclosure/ViewSearch")?;
+    let token = Regex::new(r#"name="__RequestVerificationToken" type="hidden" value="([^"]+)""#)
+        .map_err(|error| error.to_string())?
+        .captures(&search_html)
+        .and_then(|captures| captures.get(1))
+        .map(|value| value.as_str().to_string())
+        .ok_or_else(|| "missing House Clerk CSRF token".to_string())?;
+
+    let last_name = entity
+        .name
+        .split_whitespace()
+        .last()
+        .ok_or_else(|| format!("invalid congress member name: {}", entity.name))?;
+    let form = vec![
+        ("LastName".to_string(), last_name.to_string()),
+        ("FilingYear".to_string(), year.to_string()),
+        ("State".to_string(), String::new()),
+        ("District".to_string(), String::new()),
+        ("__RequestVerificationToken".to_string(), token),
+    ];
+    let results_html = client.post_form(
+        "https://disclosures-clerk.house.gov/FinancialDisclosure/ViewMemberSearchResult",
+        &form,
+        "https://disclosures-clerk.house.gov/FinancialDisclosure/ViewSearch",
+    )?;
+    parse_house_search_results(&results_html, entity, year)
+}
+
+fn parse_house_search_results(
+    html: &str,
+    entity: &SecEntity,
+    _year: i32,
+) -> Result<Vec<HouseSearchResult>, String> {
+    let pattern = Regex::new(
+        r#"(?s)<tr role="row">.*?<a href="(?P<href>[^"]+)"[^>]*>(?P<name>[^<]+)</a>.*?<td data-label="Office">(?P<office>[^<]*)</td>.*?<td data-label="Filing Year">(?P<year>[^<]*)</td>.*?<td data-label="Filing">(?P<filing>[^<]*)</td>.*?</tr>"#,
+    )
+    .map_err(|error| error.to_string())?;
+    let expected = normalized_name_tokens(&entity.name);
+    let mut results = Vec::new();
+
+    for captures in pattern.captures_iter(html) {
+        let href = captures.name("href").map(|value| value.as_str()).unwrap_or_default();
+        let filing = captures
+            .name("filing")
+            .map(|value| value.as_str())
+            .unwrap_or_default();
+        if !filing.contains("PTR") {
+            continue;
+        }
+        let matched_name = captures
+            .name("name")
+            .map(|value| value.as_str())
+            .unwrap_or_default();
+        if !name_matches_entity(matched_name, &expected) {
+            continue;
+        }
+        let source_url = if href.starts_with("http") {
+            href.to_string()
+        } else {
+            format!("https://disclosures-clerk.house.gov/{href}")
+        };
+        let filing_id = source_url
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(".pdf")
+            .to_string();
+        results.push(HouseSearchResult {
+            filing_id,
+            source_url,
+        });
+    }
+
+    results.sort_by(|left, right| right.filing_id.cmp(&left.filing_id));
+    results.dedup_by(|left, right| left.filing_id == right.filing_id);
+    Ok(results)
+}
+
+fn normalized_name_tokens(value: &str) -> Vec<String> {
+    value
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .map(|part| part.to_ascii_lowercase())
+        .collect()
+}
+
+fn name_matches_entity(candidate: &str, expected: &[String]) -> bool {
+    let normalized = normalized_name_tokens(candidate);
+    expected.iter().all(|token| normalized.iter().any(|part| part == token))
+}
+
+fn parse_house_ptr_pdf(bytes: &[u8]) -> Result<ParsedCongressFiling, String> {
+    let temp_path = temp_pdf_path();
+    fs::write(&temp_path, bytes).map_err(|error| error.to_string())?;
+    let result = (|| {
+        let child = Command::new(python_command())
+            .arg("-u")
+            .arg(house_ptr_script())
+            .arg(&temp_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let output = child.wait_with_output().map_err(|error| error.to_string())?;
+        if !output.status.success() {
+            return Err("house pdf parser failed".to_string());
+        }
+        serde_json::from_slice::<ParsedCongressFiling>(&output.stdout).map_err(|error| error.to_string())
+    })();
+    let _ = fs::remove_file(&temp_path);
+    result
+}
+
+fn upsert_congress_transactions(
+    connection: &Connection,
+    entity: &SecEntity,
+    filing: &HouseSearchResult,
+    parsed: ParsedCongressFiling,
+) -> Result<(), String> {
+    if parsed.transactions.is_empty() {
+        return Ok(());
+    }
+    let filed_at = parsed.filed_at;
+    let filing_id = parsed.filing_id.unwrap_or_else(|| filing.filing_id.clone());
+    let transaction = connection.unchecked_transaction().map_err(|error| error.to_string())?;
+    for (index, tx) in parsed.transactions.into_iter().enumerate() {
+        transaction
+            .execute(
+                "
+                INSERT OR IGNORE INTO congress_transactions(
+                  entity_id, filing_id, transaction_index, chamber, source_url, filed_at,
+                  transaction_date, notification_date, owner_code, asset_name, ticker,
+                  transaction_type, amount_range, description
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                ",
+                params![
+                    entity.id,
+                    filing_id,
+                    index as i64,
+                    entity.subtitle.clone().unwrap_or_else(|| "House".to_string()),
+                    filing.source_url,
+                    filed_at,
+                    normalize_us_date(&tx.transaction_date),
+                    tx.notification_date.as_deref().map(normalize_us_date),
+                    tx.owner_code,
+                    tx.asset_name,
+                    tx.ticker,
+                    tx.transaction_type,
+                    tx.amount_range,
+                    tx.description,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    transaction.commit().map_err(|error| error.to_string())
+}
+
+fn normalize_us_date(value: &str) -> String {
+    chrono::NaiveDate::parse_from_str(value, "%m/%d/%Y")
+        .map(|date| date.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|_| value.to_string())
+}
+
+fn temp_pdf_path() -> PathBuf {
+    let filename = format!(
+        "apeterm-congress-{}-{}.pdf",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    );
+    std::env::temp_dir().join(filename)
+}
+
+fn python_command() -> String {
+    if let Ok(value) = env::var(ENV_PYTHON) {
+        if !value.trim().is_empty() {
+            return value;
+        }
+    }
+    if Path::new(LOCAL_PYTHON).exists() {
+        LOCAL_PYTHON.to_string()
+    } else {
+        "python3".to_string()
+    }
+}
+
+fn house_ptr_script() -> PathBuf {
+    if let Ok(value) = env::var(ENV_SCRIPT_DIR) {
+        let path = Path::new(value.trim()).join("house_ptr_extract.py");
+        if path.exists() {
+            return path;
+        }
+    }
+    PathBuf::from(HOUSE_PTR_SCRIPT)
 }
 
 pub fn sync_all_verbose(db_path: &std::path::Path, config: &SecConfig) -> Result<usize, String> {

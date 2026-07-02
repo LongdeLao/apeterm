@@ -86,6 +86,9 @@ def main():
     result = {
         "price": None,
         "previous_close": None,
+        "open": None,
+        "day_high": None,
+        "day_low": None,
         "market_cap": None,
         "avg_volume": None,
         "week_52_high": None,
@@ -99,6 +102,7 @@ def main():
         "summary_de": None,
         "country": None,
         "website": None,
+        "history": [],
     }
 
     if not symbol:
@@ -118,12 +122,34 @@ def main():
         )
         result["week_52_high"] = number(pick(fast, ["year_high", "yearHigh"]))
         result["week_52_low"] = number(pick(fast, ["year_low", "yearLow"]))
+        result["open"] = number(pick(fast, ["open", "regularMarketOpen"]))
+        result["day_high"] = number(pick(fast, ["day_high", "dayHigh"]))
+        result["day_low"] = number(pick(fast, ["day_low", "dayLow"]))
+
+        try:
+            history = ticker.history(period="3mo", interval="1d")[["Close"]].dropna()
+            points = {}
+            for ts, row in history.iterrows():
+                close = number(row.get("Close"))
+                if close is None:
+                    continue
+                try:
+                    unix_ts = int(ts.timestamp())
+                except Exception:
+                    continue
+                points[unix_ts] = {"ts": unix_ts, "close": round(close, 4)}
+            result["history"] = [points[key] for key in sorted(points)]
+        except Exception:
+            result["history"] = []
 
         info = ticker.info
         result["market_cap"] = result["market_cap"] or number(info.get("marketCap"))
         result["avg_volume"] = result["avg_volume"] or number(info.get("averageVolume"))
         result["week_52_high"] = result["week_52_high"] or number(info.get("fiftyTwoWeekHigh"))
         result["week_52_low"] = result["week_52_low"] or number(info.get("fiftyTwoWeekLow"))
+        result["open"] = result["open"] or number(info.get("open") or info.get("regularMarketOpen"))
+        result["day_high"] = result["day_high"] or number(info.get("dayHigh"))
+        result["day_low"] = result["day_low"] or number(info.get("dayLow"))
         result["trailing_pe"] = number(info.get("trailingPE"))
         result["forward_pe"] = number(info.get("forwardPE"))
         result["dividend_yield"] = number(info.get("dividendYield"))

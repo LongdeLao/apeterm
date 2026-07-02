@@ -45,11 +45,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         return;
     };
 
-    let kind = match app.sec_tab {
-        SecTab::Institutional => EntityKind::Institution,
-        SecTab::Ceos => EntityKind::Ceo,
+    let entities = match app.sec_tab {
+        SecTab::Institutional => db::sec_repo::list_entities(&connection, EntityKind::Institution),
+        SecTab::Ceos => db::sec_repo::list_ceo_entities(&connection, false),
+        SecTab::Congress => db::sec_repo::list_ceo_entities(&connection, true),
     };
-    let entities = db::sec_repo::list_entities(&connection, kind).unwrap_or_default();
+    let entities = entities.unwrap_or_default();
     if entities.is_empty() {
         frame.render_widget(
             Paragraph::new("No SEC watchlist entities seeded")
@@ -70,6 +71,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     match app.sec_tab {
         SecTab::Institutional => render_institution_detail(frame, app, panes[1], &connection, selected_entity),
         SecTab::Ceos => render_ceo_detail(frame, app, panes[1], &connection, selected_entity),
+        SecTab::Congress => render_congress_detail(frame, app, panes[1], &connection, selected_entity),
     }
 
     let footer = app
@@ -84,7 +86,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
 
 fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
-    let tabs = [(SecTab::Institutional, "INSTITUTIONAL"), (SecTab::Ceos, "CEOS")];
+    let tabs = [
+        (SecTab::Institutional, "INSTITUTIONAL"),
+        (SecTab::Ceos, "CEOS"),
+        (SecTab::Congress, "CONGRESS"),
+    ];
     frame.render_widget(
         Block::default()
             .borders(Borders::BOTTOM)
@@ -124,9 +130,14 @@ fn render_watchlist(
     selected_index: usize,
 ) {
     let theme = current_theme(app.theme_name);
+    let title = match app.sec_tab {
+        SecTab::Institutional => " institutions ",
+        SecTab::Ceos => " insiders ",
+        SecTab::Congress => " members ",
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" watchlist ")
+        .title(title)
         .border_style(Style::default().fg(theme.muted));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -175,21 +186,49 @@ fn render_watchlist(
                 };
                 Span::styled(glyph, Style::default().fg(color))
             }
+            SecTab::Congress => {
+                let code = db::sec_repo::latest_congress_transaction_type(connection, entity.id)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
+                let (glyph, color) = if code.starts_with('P') {
+                    ("● ", theme.positive)
+                } else if code.starts_with('S') {
+                    ("○ ", NEGATIVE)
+                } else {
+                    ("• ", theme.accent)
+                };
+                Span::styled(glyph, Style::default().fg(color))
+            }
         };
-        let mut spans = vec![glyph, Span::styled(entity.name.clone(), base_style)];
-        if let Some(subtitle) = &entity.subtitle {
+        let mut spans = vec![glyph];
+        if app.sec_tab == SecTab::Congress {
+            let name_width = entities
+                .iter()
+                .map(|value| value.name.len())
+                .max()
+                .unwrap_or(10)
+                .min(inner.width.saturating_sub(10) as usize);
             spans.push(Span::styled(
-                format!("  {subtitle}"),
-                Style::default().fg(theme.muted),
+                pad_right(&entity.name, name_width + 1),
+                base_style,
             ));
+            if let Some(subtitle) = &entity.subtitle {
+                spans.push(Span::styled(subtitle.clone(), Style::default().fg(theme.muted)));
+            }
+        } else {
+            spans.push(Span::styled(entity.name.clone(), base_style));
+            if let Some(subtitle) = &entity.subtitle {
+                spans.push(Span::styled(
+                    format!("  {subtitle}"),
+                    Style::default().fg(theme.muted),
+                ));
+            }
         }
         lines.push(Line::from(spans));
     }
 
-    frame.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: true }),
-        inner,
-    );
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_institution_detail(
@@ -345,6 +384,84 @@ fn render_ceo_detail(
     frame.render_widget(table, sections[1]);
 }
 
+fn render_congress_detail(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    connection: &rusqlite::Connection,
+    entity: &SecEntity,
+) {
+    let theme = current_theme(app.theme_name);
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(4), Constraint::Min(0)])
+        .split(area);
+    render_detail_header(frame, app, sections[0], connection, entity);
+    let txs = db::sec_repo::recent_congress_txs(connection, entity.id, 20).unwrap_or_default();
+    if txs.is_empty() {
+        let message = if entity.subtitle.as_deref() == Some("Senate") {
+            "Senate disclosures are not ingesting yet."
+        } else {
+            "No House PTR transactions synced yet."
+        };
+        frame.render_widget(
+            Paragraph::new(message)
+                .style(Style::default().fg(theme.muted))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" disclosures ")
+                        .border_style(Style::default().fg(theme.muted)),
+                )
+                .wrap(Wrap { trim: true }),
+            sections[1],
+        );
+        return;
+    }
+
+    let rows = txs.into_iter().map(|tx| {
+        let style = if tx.transaction_type.starts_with('P') {
+            Style::default().fg(theme.positive)
+        } else if tx.transaction_type.starts_with('S') {
+            Style::default().fg(NEGATIVE)
+        } else {
+            Style::default().fg(theme.muted)
+        };
+        Row::new(vec![
+            Cell::from(tx.transaction_date),
+            Cell::from(Line::from(Span::styled(tx.transaction_type, style))),
+            Cell::from(tx.ticker.unwrap_or_else(|| "-".to_string())),
+            Cell::from(tx.asset_name),
+            Cell::from(tx.amount_range),
+            Cell::from(tx.filed_at.unwrap_or_else(|| "-".to_string())),
+        ])
+    });
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(10),
+            Constraint::Length(12),
+            Constraint::Length(8),
+            Constraint::Percentage(46),
+            Constraint::Length(18),
+            Constraint::Length(10),
+        ],
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" disclosures ")
+            .border_style(Style::default().fg(theme.muted)),
+    )
+    .header(
+        Row::new(vec!["Date", "Type", "Ticker", "Asset", "Amount", "Filed"])
+            .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+    )
+    .column_spacing(1);
+    frame.render_widget(table, sections[1]);
+}
+
 fn render_detail_header(
     frame: &mut Frame,
     app: &App,
@@ -427,4 +544,9 @@ fn format_compact_number(value: f64) -> String {
     } else {
         format!("{value:.0}")
     }
+}
+
+fn pad_right(value: &str, width: usize) -> String {
+    let used = value.chars().count();
+    format!("{value}{}", " ".repeat(width.saturating_sub(used)))
 }
