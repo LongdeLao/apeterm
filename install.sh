@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+  ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  ROOT_DIR=""
+fi
 APP_NAME="apeterm"
 PREFIX="${PREFIX:-$HOME/.local}"
 DEFAULT_BIN_DIR="$PREFIX/bin"
@@ -9,7 +13,8 @@ BIN_DIR="${BIN_DIR:-}"
 SHARE_DIR="${SHARE_DIR:-$PREFIX/share/$APP_NAME}"
 SCRIPT_DIR="$SHARE_DIR/scripts"
 VERSION="${VERSION:-latest}"
-GITHUB_REPO="${GITHUB_REPO:-}"
+GITHUB_REPO="${GITHUB_REPO:-LongdeLao/apeterm}"
+REPO_REF="${REPO_REF:-master}"
 BUILD_FROM_SOURCE="${BUILD_FROM_SOURCE:-0}"
 INSTALL_PYTHON_DEPS="${INSTALL_PYTHON_DEPS:-1}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -113,19 +118,33 @@ release_url() {
   fi
 }
 
+raw_url() {
+  local path="$1"
+  printf 'https://raw.githubusercontent.com/%s/%s/%s\n' \
+    "$GITHUB_REPO" "$REPO_REF" "$path"
+}
+
 install_python_deps() {
   [[ "$INSTALL_PYTHON_DEPS" == "1" ]] || return 0
 
   need_cmd "$PYTHON_BIN"
   "$PYTHON_BIN" -m venv "$SHARE_DIR/.venv"
   "$SHARE_DIR/.venv/bin/pip" install --upgrade pip >/dev/null
-  "$SHARE_DIR/.venv/bin/pip" install -r "$ROOT_DIR/scripts/requirements.txt" >/dev/null
+  "$SHARE_DIR/.venv/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" >/dev/null
 }
 
 install_support_files() {
   mkdir -p "$SCRIPT_DIR"
-  install -m 0644 "$ROOT_DIR/scripts/yfinance_stream.py" "$SCRIPT_DIR/yfinance_stream.py"
-  install -m 0644 "$ROOT_DIR/scripts/yfinance_details.py" "$SCRIPT_DIR/yfinance_details.py"
+  if [[ -n "$ROOT_DIR" ]]; then
+    install -m 0644 "$ROOT_DIR/scripts/yfinance_stream.py" "$SCRIPT_DIR/yfinance_stream.py"
+    install -m 0644 "$ROOT_DIR/scripts/yfinance_details.py" "$SCRIPT_DIR/yfinance_details.py"
+    install -m 0644 "$ROOT_DIR/scripts/requirements.txt" "$SCRIPT_DIR/requirements.txt"
+  else
+    need_cmd curl
+    curl -fsSL "$(raw_url scripts/yfinance_stream.py)" -o "$SCRIPT_DIR/yfinance_stream.py"
+    curl -fsSL "$(raw_url scripts/yfinance_details.py)" -o "$SCRIPT_DIR/yfinance_details.py"
+    curl -fsSL "$(raw_url scripts/requirements.txt)" -o "$SCRIPT_DIR/requirements.txt"
+  fi
 }
 
 install_wrapper() {
@@ -152,7 +171,12 @@ install_from_release() {
 
   mkdir -p "$BIN_DIR" "$SHARE_DIR"
   echo "downloading $url"
-  curl -fL "$url" -o "$tmp/$APP_NAME.tar.gz"
+  if ! curl -fL "$url" -o "$tmp/$APP_NAME.tar.gz"; then
+    echo "error: no published release asset for $(detect_target)" >&2
+    echo "expected: $url" >&2
+    echo "publish a GitHub release for this target, or run a source install from a local checkout." >&2
+    exit 1
+  fi
   tar -xzf "$tmp/$APP_NAME.tar.gz" -C "$tmp"
 
   local binary
@@ -171,6 +195,10 @@ install_from_release() {
 
 install_from_source() {
   need_cmd cargo
+  if [[ -z "$ROOT_DIR" ]]; then
+    echo "error: source install requires a checked out repository" >&2
+    exit 1
+  fi
   mkdir -p "$BIN_DIR" "$SHARE_DIR"
   cd "$ROOT_DIR"
   cargo build --release
