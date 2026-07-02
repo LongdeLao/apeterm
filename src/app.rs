@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ai::client::LlmClient,
-    config::AppConfig,
-    config::LlmConfig,
+    config::{AppConfig, LlmConfig, NamedWatchlist},
     db,
     i18n::{I18n, Key, Locale},
     market::{MarketEvent, MarketSession},
@@ -21,6 +20,7 @@ use crate::{
         WatchlistMatcher,
     },
     quotes::{Quote, update_market_quotes},
+    sec::{self, EntityKind},
     search::{self, InstrumentDetails, LiveInstrumentDetails, SearchResult},
 };
 
@@ -35,6 +35,22 @@ pub enum Page {
     Details,
     Settings,
     Agent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppMode {
+    Normal,
+    TextInput(InputTarget),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputTarget {
+    Agent,
+    Search,
+    ResetConfirmation,
+    Watchlist,
+    Notes,
+    NotesSearch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +90,7 @@ pub enum WindowKind {
     Watchlist,
     Calendar,
     Notes,
+    Sec,
     Picker,
 }
 
@@ -114,6 +131,21 @@ pub enum NewsFilterTab {
     Crypto,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NotesFilterTab {
+    #[default]
+    All,
+    Tickers,
+    Journal,
+    Pinned,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecTab {
+    Institutional,
+    Ceos,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsItem {
     Language,
@@ -143,6 +175,9 @@ pub enum WatchlistEditMode {
         index: usize,
         input: String,
     },
+    CreateWatchlist {
+        input: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,6 +197,12 @@ pub struct WatchlistEditor {
 #[derive(Debug, Clone)]
 pub struct TextInput {
     pub input: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NotesDraft {
+    pub note_id: i64,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,6 +231,12 @@ enum NewsEvent {
     Error(String),
 }
 
+#[derive(Debug)]
+enum SecEvent {
+    Done(String),
+    Error(String),
+}
+
 #[derive(Debug, Clone)]
 pub enum NewsListRow {
     Group {
@@ -203,10 +250,10 @@ pub enum NewsListRow {
 #[derive(Debug)]
 pub struct App {
     pub should_quit: bool,
+    pub mode: AppMode,
     pub page: Page,
     pub onboarding_step: OnboardingStep,
     pub onboarding_complete: bool,
-    pub logged_in: bool,
     pub locale: Locale,
     pub i18n: I18n,
     pub theme_name: ThemeName,
@@ -251,6 +298,23 @@ pub struct App {
     pub collapsed_watchlist_news: HashSet<String>,
     known_watchlist_news_symbols: HashSet<String>,
     last_news_refresh: Option<Instant>,
+    pub notes_tab: NotesFilterTab,
+    pub notes_selection: usize,
+    pub notes_scroll: usize,
+    pub notes_search_query: String,
+    pub notes_ticker_filter: Option<String>,
+    pub notes_insert_mode: bool,
+    pub notes_draft: Option<NotesDraft>,
+    pub notes_suggestions: Vec<SearchResult>,
+    pub notes_suggestion_selection: usize,
+    pub pending_note_delete: Option<i64>,
+    pub sec_tab: SecTab,
+    pub sec_institutional_selection: usize,
+    pub sec_ceo_selection: usize,
+    pub sec_status: Option<String>,
+    pub sec_loading: bool,
+    sec_receiver: Option<Receiver<SecEvent>>,
+    last_sec_refresh: Option<Instant>,
     financial_juice_cooldown_until: Option<Instant>,
     pub agent_input: String,
     pub agent_messages: Vec<AgentMessage>,
@@ -278,6 +342,7 @@ impl App {
         let onboarding_complete = config.onboarding.completed;
         Self {
             should_quit: false,
+            mode: AppMode::Normal,
             page: if onboarding_complete {
                 Page::Dashboard
             } else {
@@ -285,7 +350,6 @@ impl App {
             },
             onboarding_step: OnboardingStep::Welcome,
             onboarding_complete,
-            logged_in: false,
             locale: locale.clone(),
             i18n: I18n::new(locale),
             theme_name: config.theme,
@@ -330,6 +394,23 @@ impl App {
             collapsed_watchlist_news: HashSet::new(),
             known_watchlist_news_symbols: HashSet::new(),
             last_news_refresh: None,
+            notes_tab: NotesFilterTab::All,
+            notes_selection: 0,
+            notes_scroll: 0,
+            notes_search_query: String::new(),
+            notes_ticker_filter: None,
+            notes_insert_mode: false,
+            notes_draft: None,
+            notes_suggestions: Vec::new(),
+            notes_suggestion_selection: 0,
+            pending_note_delete: None,
+            sec_tab: SecTab::Institutional,
+            sec_institutional_selection: 0,
+            sec_ceo_selection: 0,
+            sec_status: None,
+            sec_loading: false,
+            sec_receiver: None,
+            last_sec_refresh: None,
             financial_juice_cooldown_until: None,
             agent_input: String::new(),
             agent_messages: Vec::new(),
@@ -474,16 +555,19 @@ impl App {
         self.show_help = false;
         self.pending_split = false;
         if self.page == Page::Details {
+            self.mode = AppMode::Normal;
             self.page = Page::Search;
             self.selected_details = None;
             self.selected_live_details = None;
             self.live_details_loading = false;
             self.live_details_receiver = None;
         } else if self.page == Page::Search {
+            self.mode = AppMode::Normal;
             self.page = Page::Dashboard;
         } else if self.page == Page::Settings {
             if self.reset_confirmation.is_some() {
                 self.reset_confirmation = None;
+                self.clear_text_input_mode();
             } else {
                 self.page = Page::Dashboard;
             }
@@ -625,6 +709,7 @@ impl App {
     }
 
     pub fn open_search(&mut self) {
+        self.begin_text_input(InputTarget::Search);
         self.page = Page::Search;
         self.show_help = false;
         self.pending_split = false;
@@ -633,6 +718,7 @@ impl App {
     }
 
     pub fn open_settings(&mut self) {
+        self.mode = AppMode::Normal;
         self.page = Page::Settings;
         self.show_help = false;
         self.pending_split = false;
@@ -644,6 +730,7 @@ impl App {
         if self.page != Page::Agent {
             self.agent_previous_page = self.page;
         }
+        self.begin_text_input(InputTarget::Agent);
         self.page = Page::Agent;
         self.show_help = false;
         self.pending_split = false;
@@ -652,6 +739,7 @@ impl App {
     }
 
     pub fn close_agent(&mut self) {
+        self.mode = AppMode::Normal;
         self.page = self.agent_previous_page;
         self.agent_loading = false;
         self.agent_response_receiver = None;
@@ -660,6 +748,161 @@ impl App {
 
     pub fn agent_background_page(&self) -> Page {
         self.agent_previous_page
+    }
+
+    pub fn begin_text_input(&mut self, target: InputTarget) {
+        self.mode = AppMode::TextInput(target);
+    }
+
+    pub fn clear_text_input_mode(&mut self) {
+        self.mode = AppMode::Normal;
+    }
+
+    pub fn is_text_input_active(&self) -> bool {
+        matches!(self.mode, AppMode::TextInput(_))
+    }
+
+    pub fn is_text_input_target(&self, target: InputTarget) -> bool {
+        self.mode == AppMode::TextInput(target)
+    }
+
+    pub fn cancel_text_input(&mut self) {
+        match self.mode {
+            AppMode::TextInput(InputTarget::Agent) => self.close_agent(),
+            AppMode::TextInput(InputTarget::Search) => self.clear_text_input_mode(),
+            AppMode::TextInput(InputTarget::ResetConfirmation) => {
+                self.reset_confirmation = None;
+                self.clear_text_input_mode();
+            }
+            AppMode::TextInput(InputTarget::Watchlist) => {
+                if let Some(editor) = &mut self.watchlist_editor {
+                    editor.mode = None;
+                }
+                self.watchlist_suggestions.clear();
+                self.watchlist_suggestion_selection = 0;
+                self.clear_text_input_mode();
+            }
+            // Notes editing is fully handled in event.rs before this dispatcher runs.
+            AppMode::TextInput(InputTarget::Notes) => {}
+            AppMode::TextInput(InputTarget::NotesSearch) => {
+                self.notes_search_query.clear();
+                self.notes_ticker_filter = None;
+                self.notes_selection = 0;
+                self.notes_scroll = 0;
+                self.clear_text_input_mode();
+            }
+            AppMode::Normal => {}
+        }
+    }
+
+    pub fn submit_text_input(&mut self) {
+        match self.mode {
+            AppMode::TextInput(InputTarget::Agent) => self.send_agent_message(),
+            AppMode::TextInput(InputTarget::Search) => {
+                self.clear_text_input_mode();
+                self.open_selected_details();
+            }
+            AppMode::TextInput(InputTarget::ResetConfirmation) => {
+                if self
+                    .reset_confirmation
+                    .as_ref()
+                    .is_some_and(|input| input.input == "reset")
+                {
+                    self.reset_settings_to_defaults();
+                }
+            }
+            AppMode::TextInput(InputTarget::Watchlist) => {
+                self.save_watchlist_input();
+                self.clear_text_input_mode();
+            }
+            AppMode::TextInput(InputTarget::Notes) => {}
+            AppMode::TextInput(InputTarget::NotesSearch) => self.clear_text_input_mode(),
+            AppMode::Normal => {}
+        }
+    }
+
+    pub fn push_text_input_char(&mut self, character: char) {
+        if character.is_control() {
+            return;
+        }
+
+        match self.mode {
+            AppMode::TextInput(InputTarget::Agent) => self.agent_input.push(character),
+            AppMode::TextInput(InputTarget::Search) => {
+                self.search_query.push(character);
+                self.reset_search_window();
+                self.refresh_search();
+            }
+            AppMode::TextInput(InputTarget::ResetConfirmation) => {
+                if let Some(input) = &mut self.reset_confirmation {
+                    input.input.push(character);
+                }
+            }
+            AppMode::TextInput(InputTarget::Watchlist) => {
+                match self
+                    .watchlist_editor
+                    .as_mut()
+                    .and_then(|editor| editor.mode.as_mut())
+                {
+                    Some(WatchlistEditMode::Add { input, .. })
+                    | Some(WatchlistEditMode::EditAlias { input, .. })
+                    | Some(WatchlistEditMode::ChangeTicker { input, .. })
+                    | Some(WatchlistEditMode::CreateWatchlist { input }) => input.push(character),
+                    None => {}
+                }
+                self.refresh_watchlist_suggestions();
+            }
+            AppMode::TextInput(InputTarget::Notes) => {}
+            AppMode::TextInput(InputTarget::NotesSearch) => {
+                self.notes_search_query.push(character);
+                self.notes_ticker_filter = None;
+                self.notes_selection = 0;
+                self.notes_scroll = 0;
+            }
+            AppMode::Normal => {}
+        }
+    }
+
+    pub fn pop_text_input_char(&mut self) {
+        match self.mode {
+            AppMode::TextInput(InputTarget::Agent) => {
+                self.agent_input.pop();
+            }
+            AppMode::TextInput(InputTarget::Search) => {
+                self.search_query.pop();
+                self.reset_search_window();
+                self.refresh_search();
+            }
+            AppMode::TextInput(InputTarget::ResetConfirmation) => {
+                if let Some(input) = &mut self.reset_confirmation {
+                    input.input.pop();
+                }
+            }
+            AppMode::TextInput(InputTarget::Watchlist) => {
+                match self
+                    .watchlist_editor
+                    .as_mut()
+                    .and_then(|editor| editor.mode.as_mut())
+                {
+                    Some(WatchlistEditMode::Add { input, .. })
+                    | Some(WatchlistEditMode::EditAlias { input, .. })
+                    | Some(WatchlistEditMode::ChangeTicker { input, .. })
+                    | Some(WatchlistEditMode::CreateWatchlist { input }) => {
+                        input.pop();
+                    }
+                    None => {}
+                }
+                self.refresh_watchlist_suggestions();
+            }
+            AppMode::TextInput(InputTarget::Notes) => {}
+            AppMode::TextInput(InputTarget::NotesSearch) => {
+                self.notes_search_query.pop();
+                self.notes_ticker_filter = None;
+                self.notes_selection = 0;
+                self.notes_scroll = 0;
+            }
+            AppMode::Normal => {}
+        }
     }
 
     pub fn push_agent_char(&mut self, character: char) {
@@ -727,21 +970,6 @@ impl App {
                 ));
             }
         });
-    }
-
-    pub fn push_search_char(&mut self, character: char) {
-        if character.is_control() {
-            return;
-        }
-        self.search_query.push(character);
-        self.reset_search_window();
-        self.refresh_search();
-    }
-
-    pub fn pop_search_char(&mut self) {
-        self.search_query.pop();
-        self.reset_search_window();
-        self.refresh_search();
     }
 
     pub fn move_search_selection(&mut self, direction: SelectionDirection) {
@@ -957,11 +1185,56 @@ impl App {
     }
 
     pub fn stock_watchlist(&self) -> &[String] {
-        &self.config.watchlist.stock_symbols
+        &self.active_watchlist().stock_symbols
     }
 
     pub fn crypto_watchlist(&self) -> &[String] {
-        &self.config.watchlist.crypto_symbols
+        &self.active_watchlist().crypto_symbols
+    }
+
+    pub fn watchlists(&self) -> &[NamedWatchlist] {
+        &self.config.watchlist.lists
+    }
+
+    pub fn active_watchlist_index(&self) -> usize {
+        self.config.watchlist.active
+    }
+
+    pub fn cycle_active_watchlist(&mut self, direction: SelectionDirection) {
+        let count = self.config.watchlist.lists.len();
+        if count <= 1 {
+            return;
+        }
+
+        self.config.watchlist.active = match direction {
+            SelectionDirection::Previous => {
+                if self.config.watchlist.active == 0 {
+                    count - 1
+                } else {
+                    self.config.watchlist.active - 1
+                }
+            }
+            SelectionDirection::Next => (self.config.watchlist.active + 1) % count,
+        };
+        self.retain_configured_quotes();
+        self.request_market_refresh();
+        let _ = self.config.save();
+    }
+
+    pub fn delete_active_watchlist(&mut self) {
+        if self.config.watchlist.lists.len() <= 1 {
+            return;
+        }
+
+        let active = self.config.watchlist.active;
+        self.config.watchlist.lists.remove(active);
+        if self.config.watchlist.active >= self.config.watchlist.lists.len() {
+            self.config.watchlist.active = self.config.watchlist.lists.len().saturating_sub(1);
+        }
+        self.retain_configured_quotes();
+        self.clamp_watchlist_selection();
+        self.request_market_refresh();
+        let _ = self.config.save();
     }
 
     pub fn news_fetch_on_startup(&self) -> bool {
@@ -979,8 +1252,8 @@ impl App {
 
         let runtime_config = NewsRuntimeConfig {
             feeds: self.config.news.feeds.clone(),
-            stock_symbols: self.config.watchlist.stock_symbols.clone(),
-            crypto_symbols: self.config.watchlist.crypto_symbols.clone(),
+            stock_symbols: self.stock_watchlist().to_vec(),
+            crypto_symbols: self.crypto_watchlist().to_vec(),
             stock_matchers: self.build_watchlist_matchers(WatchlistKind::Stock),
             crypto_matchers: self.build_watchlist_matchers(WatchlistKind::Crypto),
             enable_rss: self.config.news.enable_rss,
@@ -1003,6 +1276,97 @@ impl App {
                 let _ = sender.send(NewsEvent::Error(error));
             }
         });
+    }
+
+    pub fn sec_refresh_interval(&self) -> Duration {
+        Duration::from_secs(self.config.sec.refresh_interval_seconds.max(1))
+    }
+
+    pub fn refresh_sec(&mut self) {
+        if self.sec_loading {
+            return;
+        }
+
+        let db_path = self.ticker_db_path.clone();
+        let config = self.config.sec.clone();
+        self.sec_loading = true;
+        self.last_sec_refresh = Some(Instant::now());
+        self.sec_status = Some("SEC sync running".to_string());
+
+        let (sender, receiver) = mpsc::channel();
+        self.sec_receiver = Some(receiver);
+        thread::spawn(move || match sec::sync::sync_all(&db_path, &config) {
+            Ok(count) => {
+                let _ = sender.send(SecEvent::Done(format!("SEC synced {count} entities")));
+            }
+            Err(error) => {
+                let _ = sender.send(SecEvent::Error(error));
+            }
+        });
+    }
+
+    pub fn refresh_selected_sec_entity(&mut self) {
+        if self.sec_loading {
+            return;
+        }
+        let Some(entity_id) = self.selected_sec_entity_id() else {
+            return;
+        };
+
+        let db_path = self.ticker_db_path.clone();
+        let config = self.config.sec.clone();
+        self.sec_loading = true;
+        self.sec_status = Some("SEC entity sync running".to_string());
+
+        let (sender, receiver) = mpsc::channel();
+        self.sec_receiver = Some(receiver);
+        thread::spawn(move || match sec::sync::sync_entity(&db_path, &config, entity_id) {
+            Ok(_) => {
+                let _ = sender.send(SecEvent::Done("SEC entity synced".to_string()));
+            }
+            Err(error) => {
+                let _ = sender.send(SecEvent::Error(error));
+            }
+        });
+    }
+
+    pub fn poll_sec(&mut self) {
+        if let Some(receiver) = &self.sec_receiver {
+            match receiver.try_recv() {
+                Ok(SecEvent::Done(status)) => {
+                    self.sec_loading = false;
+                    self.sec_receiver = None;
+                    self.sec_status = Some(status);
+                }
+                Ok(SecEvent::Error(error)) => {
+                    self.sec_loading = false;
+                    self.sec_receiver = None;
+                    self.sec_status = Some(format!("SEC sync error: {error}"));
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.sec_loading = false;
+                    self.sec_receiver = None;
+                }
+            }
+        }
+
+        self.maybe_auto_refresh_sec();
+    }
+
+    fn maybe_auto_refresh_sec(&mut self) {
+        if self.sec_loading || !self.onboarding_complete {
+            return;
+        }
+
+        let Some(last_refresh) = self.last_sec_refresh else {
+            self.refresh_sec();
+            return;
+        };
+
+        if last_refresh.elapsed() >= self.sec_refresh_interval() {
+            self.refresh_sec();
+        }
     }
 
     pub fn poll_news(&mut self) {
@@ -1086,6 +1450,64 @@ impl App {
         } else {
             Some(format!("[{}]", symbols.join(" ")))
         }
+    }
+
+    pub fn cycle_sec_tab(&mut self, direction: SelectionDirection) {
+        self.sec_tab = match (self.sec_tab, direction) {
+            (SecTab::Institutional, SelectionDirection::Previous | SelectionDirection::Next) => {
+                SecTab::Ceos
+            }
+            (SecTab::Ceos, SelectionDirection::Previous | SelectionDirection::Next) => {
+                SecTab::Institutional
+            }
+        };
+    }
+
+    pub fn move_sec_selection(&mut self, direction: SelectionDirection) {
+        let max_index = self.sec_entity_count().saturating_sub(1);
+        let selection = match self.sec_tab {
+            SecTab::Institutional => &mut self.sec_institutional_selection,
+            SecTab::Ceos => &mut self.sec_ceo_selection,
+        };
+        match direction {
+            SelectionDirection::Previous => {
+                *selection = selection.saturating_sub(1);
+            }
+            SelectionDirection::Next => {
+                *selection = selection.saturating_add(1).min(max_index);
+            }
+        }
+    }
+
+    pub fn active_sec_selection(&self) -> usize {
+        match self.sec_tab {
+            SecTab::Institutional => self.sec_institutional_selection,
+            SecTab::Ceos => self.sec_ceo_selection,
+        }
+    }
+
+    pub fn selected_sec_entity_id(&self) -> Option<i64> {
+        let connection = db::open(&self.ticker_db_path).ok()?;
+        let kind = match self.sec_tab {
+            SecTab::Institutional => EntityKind::Institution,
+            SecTab::Ceos => EntityKind::Ceo,
+        };
+        let entities = db::sec_repo::list_entities(&connection, kind).ok()?;
+        let index = self.active_sec_selection().min(entities.len().saturating_sub(1));
+        entities.get(index).map(|entity| entity.id)
+    }
+
+    fn sec_entity_count(&self) -> usize {
+        let Ok(connection) = db::open(&self.ticker_db_path) else {
+            return 0;
+        };
+        let kind = match self.sec_tab {
+            SecTab::Institutional => EntityKind::Institution,
+            SecTab::Ceos => EntityKind::Ceo,
+        };
+        db::sec_repo::list_entities(&connection, kind)
+            .map(|entities| entities.len())
+            .unwrap_or(0)
     }
 
     pub fn move_news_selection(&mut self, direction: SelectionDirection) {
@@ -1292,12 +1714,368 @@ impl App {
     }
 
     pub fn watchlist_display_name(&self, symbol: &str) -> Option<&str> {
-        self.config
-            .watchlist
+        self.active_watchlist()
             .display_names
             .get(symbol)
             .map(String::as_str)
             .filter(|name| !name.trim().is_empty())
+    }
+
+    pub fn notes_visible(&self) -> Vec<db::notes_repo::NoteRow> {
+        let Ok(connection) = db::open(&self.ticker_db_path) else {
+            return Vec::new();
+        };
+        let all = db::notes_repo::list_all(&connection).unwrap_or_default();
+
+        let mut filtered: Vec<db::notes_repo::NoteRow> = if let Some(symbol) = &self.notes_ticker_filter
+        {
+            all.into_iter()
+                .filter(|note| note.tickers.iter().any(|ticker| ticker == symbol))
+                .collect()
+        } else {
+            all.into_iter()
+                .filter(|note| self.notes_matches_tab(note))
+                .collect()
+        };
+
+        let query = self.notes_search_query.trim();
+        if !query.is_empty() {
+            let mut ids = db::notes_repo::search_fts(&connection, query).unwrap_or_default();
+            if ids.is_empty() {
+                let lowered = query.to_ascii_lowercase();
+                ids = filtered
+                    .iter()
+                    .filter(|note| note.body.to_ascii_lowercase().contains(&lowered))
+                    .map(|note| note.id)
+                    .collect();
+            }
+            filtered.retain(|note| ids.contains(&note.id));
+        }
+
+        filtered
+    }
+
+    fn notes_matches_tab(&self, note: &db::notes_repo::NoteRow) -> bool {
+        match self.notes_tab {
+            NotesFilterTab::All => true,
+            NotesFilterTab::Tickers => !note.tickers.is_empty(),
+            NotesFilterTab::Journal => note.tickers.is_empty(),
+            NotesFilterTab::Pinned => note.pinned,
+        }
+    }
+
+    pub fn notes_selected_row(&self) -> Option<db::notes_repo::NoteRow> {
+        let rows = self.notes_visible();
+        rows.get(self.notes_selection.min(rows.len().saturating_sub(1)))
+            .cloned()
+    }
+
+    pub fn cycle_notes_tab(&mut self, direction: SelectionDirection) {
+        self.notes_tab = match (self.notes_tab, direction) {
+            (NotesFilterTab::All, SelectionDirection::Previous) => NotesFilterTab::Pinned,
+            (NotesFilterTab::All, SelectionDirection::Next) => NotesFilterTab::Tickers,
+            (NotesFilterTab::Tickers, SelectionDirection::Previous) => NotesFilterTab::All,
+            (NotesFilterTab::Tickers, SelectionDirection::Next) => NotesFilterTab::Journal,
+            (NotesFilterTab::Journal, SelectionDirection::Previous) => NotesFilterTab::Tickers,
+            (NotesFilterTab::Journal, SelectionDirection::Next) => NotesFilterTab::Pinned,
+            (NotesFilterTab::Pinned, SelectionDirection::Previous) => NotesFilterTab::Journal,
+            (NotesFilterTab::Pinned, SelectionDirection::Next) => NotesFilterTab::All,
+        };
+        self.notes_ticker_filter = None;
+        self.notes_selection = 0;
+        self.notes_scroll = 0;
+    }
+
+    pub fn move_notes_selection(&mut self, direction: SelectionDirection) {
+        let count = self.notes_visible().len();
+        if count == 0 {
+            self.notes_selection = 0;
+            self.notes_scroll = 0;
+            return;
+        }
+
+        self.notes_selection = match direction {
+            SelectionDirection::Previous => self.notes_selection.saturating_sub(1),
+            SelectionDirection::Next => (self.notes_selection + 1).min(count - 1),
+        };
+        self.sync_notes_scroll(6);
+    }
+
+    pub fn sync_notes_scroll(&mut self, visible_rows: usize) {
+        if visible_rows == 0 {
+            self.notes_scroll = self.notes_selection;
+            return;
+        }
+
+        if self.notes_selection < self.notes_scroll {
+            self.notes_scroll = self.notes_selection;
+        } else if self.notes_selection >= self.notes_scroll + visible_rows {
+            self.notes_scroll = self.notes_selection + 1 - visible_rows;
+        }
+    }
+
+    /// Creates an empty note, inserts it into the list, selects it, and
+    /// drops straight into insert mode — mirrors "New Note" in Apple Notes.
+    pub fn create_new_note(&mut self) {
+        let now = chrono::Utc::now().timestamp();
+        let Ok(connection) = db::open(&self.ticker_db_path) else {
+            return;
+        };
+        let Ok(id) = db::notes_repo::insert(&connection, "", &[], &[], now) else {
+            return;
+        };
+
+        self.notes_tab = NotesFilterTab::All;
+        self.notes_ticker_filter = None;
+        self.notes_search_query.clear();
+
+        let rows = self.notes_visible();
+        self.notes_selection = rows.iter().position(|note| note.id == id).unwrap_or(0);
+        self.sync_notes_scroll(6);
+
+        self.notes_draft = Some(NotesDraft {
+            note_id: id,
+            body: String::new(),
+        });
+        self.notes_suggestions.clear();
+        self.notes_suggestion_selection = 0;
+        self.notes_insert_mode = true;
+        self.begin_text_input(InputTarget::Notes);
+    }
+
+    /// Enters insert mode on the currently selected note (Enter / `i`).
+    /// Falls back to creating a new note if the list is empty.
+    pub fn enter_note_insert_mode(&mut self) {
+        let Some(note) = self.notes_selected_row() else {
+            self.create_new_note();
+            return;
+        };
+        self.notes_draft = Some(NotesDraft {
+            note_id: note.id,
+            body: note.body,
+        });
+        self.notes_suggestions.clear();
+        self.notes_suggestion_selection = 0;
+        self.notes_insert_mode = true;
+        self.begin_text_input(InputTarget::Notes);
+    }
+
+    /// Leaves insert mode (Esc): persists the draft, recomputes
+    /// tickers/tags, and drops empty notes rather than leaving clutter.
+    pub fn exit_note_insert_mode(&mut self) {
+        self.finalize_note_draft();
+        self.notes_insert_mode = false;
+        self.notes_suggestions.clear();
+        self.notes_suggestion_selection = 0;
+        self.clear_text_input_mode();
+    }
+
+    fn finalize_note_draft(&mut self) {
+        let Some(draft) = self.notes_draft.take() else {
+            return;
+        };
+        let Ok(connection) = db::open(&self.ticker_db_path) else {
+            return;
+        };
+
+        if draft.body.trim().is_empty() {
+            let _ = db::notes_repo::delete(&connection, draft.note_id);
+        } else {
+            let tickers = self.extract_note_tickers(&draft.body);
+            let tags = extract_note_tags(&draft.body);
+            let now = chrono::Utc::now().timestamp();
+            let _ = db::notes_repo::update(&connection, draft.note_id, &draft.body, &tickers, &tags, now);
+        }
+
+        let visible = self.notes_visible().len();
+        if self.notes_selection >= visible {
+            self.notes_selection = visible.saturating_sub(1);
+        }
+        self.sync_notes_scroll(6);
+    }
+
+    pub fn insert_note_draft_newline(&mut self) {
+        if let Some(draft) = &mut self.notes_draft {
+            draft.body.push('\n');
+        }
+        self.refresh_note_suggestions();
+    }
+
+    pub fn push_note_draft_char(&mut self, character: char) {
+        if character.is_control() {
+            return;
+        }
+        if let Some(draft) = &mut self.notes_draft {
+            draft.body.push(character);
+        }
+        self.refresh_note_suggestions();
+    }
+
+    pub fn pop_note_draft_char(&mut self) {
+        if let Some(draft) = &mut self.notes_draft {
+            draft.body.pop();
+        }
+        self.refresh_note_suggestions();
+    }
+
+    fn refresh_note_suggestions(&mut self) {
+        let Some(draft) = &self.notes_draft else {
+            self.notes_suggestions.clear();
+            self.notes_suggestion_selection = 0;
+            return;
+        };
+
+        let last_token = draft.body.split_whitespace().last().unwrap_or("");
+        let Some(query) = last_token
+            .strip_prefix('$')
+            .filter(|query| !query.is_empty())
+        else {
+            self.notes_suggestions.clear();
+            self.notes_suggestion_selection = 0;
+            return;
+        };
+
+        match db::open(&self.ticker_db_path)
+            .and_then(|connection| search::search_assets(&connection, query, &["stock", "etf"], 6))
+        {
+            Ok(results) => {
+                self.notes_suggestions = results;
+                self.notes_suggestion_selection = self
+                    .notes_suggestion_selection
+                    .min(self.notes_suggestions.len().saturating_sub(1));
+            }
+            Err(_) => {
+                self.notes_suggestions.clear();
+                self.notes_suggestion_selection = 0;
+            }
+        }
+    }
+
+    pub fn move_note_suggestion(&mut self, direction: SelectionDirection) {
+        if self.notes_suggestions.is_empty() {
+            self.notes_suggestion_selection = 0;
+            return;
+        }
+
+        self.notes_suggestion_selection = match direction {
+            SelectionDirection::Previous => self.notes_suggestion_selection.saturating_sub(1),
+            SelectionDirection::Next => (self.notes_suggestion_selection + 1)
+                .min(self.notes_suggestions.len().saturating_sub(1)),
+        };
+    }
+
+    pub fn accept_note_suggestion(&mut self) {
+        let Some(suggestion) = self
+            .notes_suggestions
+            .get(self.notes_suggestion_selection)
+            .cloned()
+        else {
+            return;
+        };
+        let Some(draft) = &mut self.notes_draft else {
+            return;
+        };
+
+        match draft.body.rfind(char::is_whitespace) {
+            Some(index) => draft.body.truncate(index + 1),
+            None => draft.body.clear(),
+        }
+        draft.body.push('$');
+        draft.body.push_str(&suggestion.symbol);
+        draft.body.push(' ');
+
+        self.notes_suggestions.clear();
+        self.notes_suggestion_selection = 0;
+    }
+
+    fn extract_note_tickers(&self, body: &str) -> Vec<String> {
+        let Ok(connection) = db::open(&self.ticker_db_path) else {
+            return Vec::new();
+        };
+        let Ok(mut statement) =
+            connection.prepare("SELECT symbol FROM instruments WHERE active = 1")
+        else {
+            return Vec::new();
+        };
+        let Ok(rows) = statement.query_map([], |row| row.get::<_, String>(0)) else {
+            return Vec::new();
+        };
+
+        let mut matched: Vec<String> = rows
+            .filter_map(std::result::Result::ok)
+            .filter(|symbol| news::contains_symbol(body, symbol))
+            .collect();
+        matched.sort();
+        matched.dedup();
+        matched
+    }
+
+    pub fn toggle_selected_note_pin(&mut self) {
+        let Some(note) = self.notes_selected_row() else {
+            return;
+        };
+        if let Ok(connection) = db::open(&self.ticker_db_path) {
+            let _ = db::notes_repo::set_pinned(&connection, note.id, !note.pinned);
+        }
+    }
+
+    pub fn begin_delete_selected_note(&mut self) {
+        let Some(note) = self.notes_selected_row() else {
+            return;
+        };
+        self.pending_note_delete = Some(note.id);
+    }
+
+    pub fn confirm_delete_note(&mut self) {
+        let Some(id) = self.pending_note_delete.take() else {
+            return;
+        };
+        if let Ok(connection) = db::open(&self.ticker_db_path) {
+            let _ = db::notes_repo::delete(&connection, id);
+        }
+
+        let visible = self.notes_visible().len();
+        if self.notes_selection >= visible {
+            self.notes_selection = visible.saturating_sub(1);
+        }
+        self.sync_notes_scroll(6);
+    }
+
+    pub fn cancel_delete_note(&mut self) {
+        self.pending_note_delete = None;
+    }
+
+    pub fn begin_notes_search(&mut self) {
+        self.begin_text_input(InputTarget::NotesSearch);
+    }
+
+    pub fn notes_ticker_symbols(&self) -> std::collections::HashSet<String> {
+        db::open(&self.ticker_db_path)
+            .and_then(|connection| db::notes_repo::all_ticker_symbols(&connection))
+            .unwrap_or_default()
+    }
+
+    pub fn jump_to_notes_for_symbol(&mut self, symbol: &str) {
+        self.notes_tab = NotesFilterTab::Tickers;
+        self.notes_ticker_filter = Some(symbol.to_string());
+        self.notes_search_query.clear();
+        self.notes_selection = 0;
+        self.notes_scroll = 0;
+        self.set_panel_content(PanelId::Notes, WindowKind::Notes);
+        self.focus_panel(PanelId::Notes);
+    }
+
+    pub fn jump_to_selected_watchlist_row_notes(&mut self) {
+        let symbol = match self.selected_watchlist_row() {
+            Some(WatchlistEditRow::Stock(index)) => self.stock_watchlist().get(index).cloned(),
+            Some(WatchlistEditRow::Crypto(index)) => self.crypto_watchlist().get(index).cloned(),
+            _ => None,
+        };
+        let Some(symbol) = symbol else {
+            return;
+        };
+        self.close_watchlist_editor();
+        self.jump_to_notes_for_symbol(&symbol);
     }
 
     pub fn selected_settings_item(&self) -> SettingsItem {
@@ -1337,6 +2115,7 @@ impl App {
                 self.reset_confirmation = Some(TextInput {
                     input: String::new(),
                 });
+                self.begin_text_input(InputTarget::ResetConfirmation);
             }
         }
     }
@@ -1374,27 +2153,12 @@ impl App {
         }
     }
 
-    pub fn push_reset_confirmation_char(&mut self, character: char) {
-        if character.is_control() {
-            return;
-        }
-
-        if let Some(input) = &mut self.reset_confirmation {
-            input.input.push(character);
-        }
-    }
-
-    pub fn pop_reset_confirmation_char(&mut self) {
-        if let Some(input) = &mut self.reset_confirmation {
-            input.input.pop();
-        }
-    }
-
     pub fn is_editing_watchlist(&self) -> bool {
         self.watchlist_editor.is_some()
     }
 
     pub fn open_watchlist_editor(&mut self) {
+        self.clear_text_input_mode();
         self.watchlist_editor = Some(WatchlistEditor {
             selection: 0,
             mode: None,
@@ -1405,6 +2169,9 @@ impl App {
         if let Some(editor) = &mut self.watchlist_editor {
             if editor.mode.is_some() {
                 editor.mode = None;
+                self.watchlist_suggestions.clear();
+                self.watchlist_suggestion_selection = 0;
+                self.clear_text_input_mode();
                 return;
             }
         }
@@ -1415,9 +2182,9 @@ impl App {
     pub fn watchlist_rows(&self) -> Vec<WatchlistEditRow> {
         let mut rows = Vec::new();
         rows.push(WatchlistEditRow::AddStock);
-        rows.extend((0..self.config.watchlist.stock_symbols.len()).map(WatchlistEditRow::Stock));
+        rows.extend((0..self.stock_watchlist().len()).map(WatchlistEditRow::Stock));
         rows.push(WatchlistEditRow::AddCrypto);
-        rows.extend((0..self.config.watchlist.crypto_symbols.len()).map(WatchlistEditRow::Crypto));
+        rows.extend((0..self.crypto_watchlist().len()).map(WatchlistEditRow::Crypto));
         rows
     }
 
@@ -1478,13 +2245,13 @@ impl App {
     pub fn delete_selected_watchlist_symbol(&mut self) {
         match self.selected_watchlist_row() {
             Some(WatchlistEditRow::Stock(index)) => {
-                if index < self.config.watchlist.stock_symbols.len() {
-                    self.config.watchlist.stock_symbols.remove(index);
+                if index < self.stock_watchlist().len() {
+                    self.active_watchlist_mut().stock_symbols.remove(index);
                 }
             }
             Some(WatchlistEditRow::Crypto(index)) => {
-                if index < self.config.watchlist.crypto_symbols.len() {
-                    self.config.watchlist.crypto_symbols.remove(index);
+                if index < self.crypto_watchlist().len() {
+                    self.active_watchlist_mut().crypto_symbols.remove(index);
                 }
             }
             _ => return,
@@ -1504,47 +2271,25 @@ impl App {
                 input: String::new(),
             });
         }
+        self.begin_text_input(InputTarget::Watchlist);
         self.refresh_watchlist_suggestions();
     }
 
-    pub fn push_watchlist_input_char(&mut self, character: char) {
-        if character.is_control() {
-            return;
+    pub fn begin_watchlist_create(&mut self) {
+        if let Some(editor) = &mut self.watchlist_editor {
+            editor.mode = Some(WatchlistEditMode::CreateWatchlist {
+                input: String::new(),
+            });
         }
-
-        match self
-            .watchlist_editor
-            .as_mut()
-            .and_then(|editor| editor.mode.as_mut())
-        {
-            Some(WatchlistEditMode::Add { input, .. })
-            | Some(WatchlistEditMode::EditAlias { input, .. })
-            | Some(WatchlistEditMode::ChangeTicker { input, .. }) => input.push(character),
-            None => {}
-        }
-        self.refresh_watchlist_suggestions();
-    }
-
-    pub fn pop_watchlist_input_char(&mut self) {
-        match self
-            .watchlist_editor
-            .as_mut()
-            .and_then(|editor| editor.mode.as_mut())
-        {
-            Some(WatchlistEditMode::Add { input, .. })
-            | Some(WatchlistEditMode::EditAlias { input, .. })
-            | Some(WatchlistEditMode::ChangeTicker { input, .. }) => {
-                input.pop();
-            }
-            None => {}
-        }
-        self.refresh_watchlist_suggestions();
+        self.begin_text_input(InputTarget::Watchlist);
+        self.watchlist_suggestions.clear();
+        self.watchlist_suggestion_selection = 0;
     }
 
     fn begin_watchlist_alias_edit(&mut self, kind: WatchlistKind, index: usize) {
         let symbol = match kind {
-            WatchlistKind::Stock => self.config.watchlist.stock_symbols.get(index),
-            WatchlistKind::Crypto => self.config.watchlist.crypto_symbols.get(index),
+            WatchlistKind::Stock => self.stock_watchlist().get(index),
+            WatchlistKind::Crypto => self.crypto_watchlist().get(index),
         }
         .cloned()
         .unwrap_or_default();
@@ -1556,6 +2301,7 @@ impl App {
         if let Some(editor) = &mut self.watchlist_editor {
             editor.mode = Some(WatchlistEditMode::EditAlias { symbol, input });
         }
+        self.begin_text_input(InputTarget::Watchlist);
         self.watchlist_suggestions.clear();
         self.watchlist_suggestion_selection = 0;
     }
@@ -1574,8 +2320,8 @@ impl App {
 
     fn begin_watchlist_ticker_change(&mut self, kind: WatchlistKind, index: usize) {
         let input = match kind {
-            WatchlistKind::Stock => self.config.watchlist.stock_symbols.get(index),
-            WatchlistKind::Crypto => self.config.watchlist.crypto_symbols.get(index),
+            WatchlistKind::Stock => self.stock_watchlist().get(index),
+            WatchlistKind::Crypto => self.crypto_watchlist().get(index),
         }
         .cloned()
         .unwrap_or_default();
@@ -1583,6 +2329,7 @@ impl App {
         if let Some(editor) = &mut self.watchlist_editor {
             editor.mode = Some(WatchlistEditMode::ChangeTicker { kind, index, input });
         }
+        self.begin_text_input(InputTarget::Watchlist);
         self.refresh_watchlist_suggestions();
     }
 
@@ -1627,10 +2374,9 @@ impl App {
             WatchlistEditMode::EditAlias { symbol, input } => {
                 let alias = input.trim();
                 if alias.is_empty() || alias.eq_ignore_ascii_case(&symbol) {
-                    self.config.watchlist.display_names.remove(&symbol);
+                    self.active_watchlist_mut().display_names.remove(&symbol);
                 } else {
-                    self.config
-                        .watchlist
+                    self.active_watchlist_mut()
                         .display_names
                         .insert(symbol, alias.to_string());
                 }
@@ -1652,33 +2398,57 @@ impl App {
                     }
                 }
             }
+            WatchlistEditMode::CreateWatchlist { input } => {
+                let name = input.trim();
+                if !name.is_empty() {
+                    self.config.watchlist.lists.push(NamedWatchlist {
+                        name: name.to_string(),
+                        crypto_symbols: Vec::new(),
+                        stock_symbols: Vec::new(),
+                        display_names: std::collections::HashMap::new(),
+                    });
+                    self.config.watchlist.active = self.config.watchlist.lists.len() - 1;
+                }
+            }
         }
 
-        self.config.watchlist.stock_symbols.sort();
-        self.config.watchlist.stock_symbols.dedup();
-        self.config.watchlist.crypto_symbols.sort();
-        self.config.watchlist.crypto_symbols.dedup();
+        self.active_watchlist_mut().stock_symbols.sort();
+        self.active_watchlist_mut().stock_symbols.dedup();
+        self.active_watchlist_mut().crypto_symbols.sort();
+        self.active_watchlist_mut().crypto_symbols.dedup();
         self.cleanup_watchlist_aliases();
         self.retain_configured_quotes();
         self.clamp_watchlist_selection();
         self.watchlist_suggestions.clear();
         self.watchlist_suggestion_selection = 0;
+        self.clear_text_input_mode();
         self.request_market_refresh();
         let _ = self.config.save();
     }
 
     fn watchlist_mut(&mut self, kind: WatchlistKind) -> &mut Vec<String> {
         match kind {
-            WatchlistKind::Stock => &mut self.config.watchlist.stock_symbols,
-            WatchlistKind::Crypto => &mut self.config.watchlist.crypto_symbols,
+            WatchlistKind::Stock => &mut self.active_watchlist_mut().stock_symbols,
+            WatchlistKind::Crypto => &mut self.active_watchlist_mut().crypto_symbols,
         }
     }
 
+    fn active_watchlist(&self) -> &NamedWatchlist {
+        &self.config.watchlist.lists[self.config.watchlist.active]
+    }
+
+    fn active_watchlist_mut(&mut self) -> &mut NamedWatchlist {
+        let active = self.config.watchlist.active;
+        &mut self.config.watchlist.lists[active]
+    }
+
     fn retain_configured_quotes(&mut self) {
+        let stock_symbols = self.stock_watchlist().to_vec();
+        let crypto_symbols = self.crypto_watchlist().to_vec();
         self.stock_quotes
-            .retain(|quote| self.config.watchlist.stock_symbols.contains(&quote.symbol));
+            .retain(|quote| stock_symbols.contains(&quote.symbol));
         self.crypto_quotes
-            .retain(|quote| self.config.watchlist.crypto_symbols.contains(&quote.symbol));
+            .retain(|quote| crypto_symbols.contains(&quote.symbol));
     }
 
     fn refresh_watchlist_suggestions(&mut self) {
@@ -1695,7 +2465,7 @@ impl App {
         let (kind, input) = match mode {
             WatchlistEditMode::Add { kind, input }
             | WatchlistEditMode::ChangeTicker { kind, input, .. } => (*kind, input.as_str()),
-            WatchlistEditMode::EditAlias { .. } => {
+            WatchlistEditMode::EditAlias { .. } | WatchlistEditMode::CreateWatchlist { .. } => {
                 self.watchlist_suggestions.clear();
                 self.watchlist_suggestion_selection = 0;
                 return;
@@ -1729,9 +2499,8 @@ impl App {
             return;
         }
 
-        if let Some(alias) = self.config.watchlist.display_names.remove(old_symbol) {
-            self.config
-                .watchlist
+        if let Some(alias) = self.active_watchlist_mut().display_names.remove(old_symbol) {
+            self.active_watchlist_mut()
                 .display_names
                 .entry(new_symbol.to_string())
                 .or_insert(alias);
@@ -1739,10 +2508,9 @@ impl App {
     }
 
     fn cleanup_watchlist_aliases(&mut self) {
-        let stock_symbols = &self.config.watchlist.stock_symbols;
-        let crypto_symbols = &self.config.watchlist.crypto_symbols;
-        self.config
-            .watchlist
+        let stock_symbols = self.stock_watchlist().to_vec();
+        let crypto_symbols = self.crypto_watchlist().to_vec();
+        self.active_watchlist_mut()
             .display_names
             .retain(|symbol, _| stock_symbols.contains(symbol) || crypto_symbols.contains(symbol));
     }
@@ -1798,6 +2566,16 @@ impl App {
         self.agent_loading = false;
         self.agent_status = None;
         self.agent_response_receiver = None;
+        self.notes_tab = NotesFilterTab::All;
+        self.notes_selection = 0;
+        self.notes_scroll = 0;
+        self.notes_search_query.clear();
+        self.notes_ticker_filter = None;
+        self.notes_insert_mode = false;
+        self.notes_draft = None;
+        self.notes_suggestions.clear();
+        self.notes_suggestion_selection = 0;
+        self.pending_note_delete = None;
         self.reset_dashboard();
         let _ = self.config.save();
     }
@@ -1904,31 +2682,6 @@ impl App {
             .unwrap_or(self.t(Key::NewsEmpty))
     }
 
-    pub fn news_source_counts_summary(&self, max_sources: usize) -> String {
-        if self.news_source_counts.is_empty() {
-            if let Some(remaining) = self.financial_juice_cooldown_remaining_minutes() {
-                return format!("sources: none  fj paused {remaining}m");
-            }
-            return "sources: none".to_string();
-        }
-
-        let mut parts = self
-            .news_source_counts
-            .iter()
-            .take(max_sources)
-            .map(|(source, count)| format!("{} {}", source_badge_label(source), count))
-            .collect::<Vec<_>>();
-        let remaining = self.news_source_counts.len().saturating_sub(max_sources);
-        if remaining > 0 {
-            parts.push(format!("+{remaining}"));
-        }
-        let mut summary = format!("sources: {}", parts.join("  "));
-        if let Some(remaining) = self.financial_juice_cooldown_remaining_minutes() {
-            summary.push_str(&format!("  fj paused {remaining}m"));
-        }
-        summary
-    }
-
     fn build_watchlist_matchers(&self, kind: WatchlistKind) -> Vec<WatchlistMatcher> {
         let symbols = match kind {
             WatchlistKind::Stock => self.stock_watchlist(),
@@ -1976,13 +2729,6 @@ impl App {
             .is_some_and(|until| Instant::now() < until)
     }
 
-    fn financial_juice_cooldown_remaining_minutes(&self) -> Option<u64> {
-        self.financial_juice_cooldown_until.and_then(|until| {
-            let now = Instant::now();
-            (until > now).then(|| ((until - now).as_secs() / 60).max(1))
-        })
-    }
-
     fn update_financial_juice_backoff(&mut self) {
         let hit_rate_limit = self
             .news_status
@@ -2002,29 +2748,6 @@ impl App {
         {
             self.financial_juice_cooldown_until = None;
         }
-    }
-}
-
-fn source_badge_label(source: &str) -> String {
-    match source {
-        "Wall Street Journal" => "WSJ".to_string(),
-        "Financial Times" => "FT".to_string(),
-        "Yahoo Finance" => "YF".to_string(),
-        "MarketWatch" => "MW".to_string(),
-        "FinancialJuice" => "FJ".to_string(),
-        "Reuters" => "RTRS".to_string(),
-        "Bloomberg" => "BBG".to_string(),
-        "Seeking Alpha" => "SA".to_string(),
-        "Barron's" => "BAR".to_string(),
-        "Federal Reserve" => "FED".to_string(),
-        "Business Wire" => "BW".to_string(),
-        "PR Newswire" => "PRN".to_string(),
-        "GlobeNewswire" => "GNW".to_string(),
-        _ => source
-            .chars()
-            .take(4)
-            .collect::<String>()
-            .to_ascii_uppercase(),
     }
 }
 
@@ -2079,7 +2802,13 @@ impl SettingsItem {
 }
 
 impl WindowKind {
-    pub const CHOICES: [Self; 4] = [Self::News, Self::Watchlist, Self::Calendar, Self::Notes];
+    pub const CHOICES: [Self; 5] = [
+        Self::News,
+        Self::Watchlist,
+        Self::Calendar,
+        Self::Notes,
+        Self::Sec,
+    ];
 
     pub fn label_key(self) -> Key {
         match self {
@@ -2087,6 +2816,7 @@ impl WindowKind {
             Self::Watchlist => Key::PanelTitleWatchlist,
             Self::Calendar => Key::PanelTitleCalendar,
             Self::Notes => Key::PanelTitleNotes,
+            Self::Sec => Key::PanelTitleSec,
             Self::Picker => Key::PanelTitlePicker,
         }
     }
@@ -2097,7 +2827,7 @@ impl Default for PanelContents {
         Self {
             news: WindowKind::News,
             watchlist: WindowKind::Watchlist,
-            calendar: WindowKind::Calendar,
+            calendar: WindowKind::Sec,
             notes: WindowKind::Notes,
         }
     }
@@ -2170,6 +2900,19 @@ fn adjust_percent(percent: u16, amount: i16) -> u16 {
     percent
         .saturating_add_signed(amount)
         .clamp(DashboardLayout::MIN_PERCENT, DashboardLayout::MAX_PERCENT)
+}
+
+fn extract_note_tags(body: &str) -> Vec<String> {
+    let mut tags = Vec::new();
+    for token in body.split_whitespace() {
+        let trimmed = token.trim_matches(|character: char| {
+            character.is_ascii_punctuation() && character != '#'
+        });
+        if trimmed.len() > 1 && trimmed.starts_with('#') && !tags.contains(&trimmed.to_string()) {
+            tags.push(trimmed.to_string());
+        }
+    }
+    tags
 }
 
 fn normalize_symbol(input: &str) -> Option<String> {

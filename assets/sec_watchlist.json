@@ -1,0 +1,18 @@
+[
+  { "kind": "institution", "name": "Berkshire Hathaway", "filer_cik": "0001067983", "issuer_ticker": null, "subtitle": null },
+  { "kind": "institution", "name": "Citadel Advisors", "filer_cik": "0001423053", "issuer_ticker": null, "subtitle": null },
+  { "kind": "institution", "name": "Bridgewater Associates", "filer_cik": "0001350694", "issuer_ticker": null, "subtitle": null },
+  { "kind": "institution", "name": "BlackRock", "filer_cik": "0002012383", "issuer_ticker": null, "subtitle": null },
+  { "kind": "institution", "name": "Vanguard", "filer_cik": "0002100119", "issuer_ticker": null, "subtitle": null },
+  { "kind": "institution", "name": "Situational Awareness LP", "filer_cik": "0002045724", "issuer_ticker": null, "subtitle": null },
+  { "kind": "ceo", "name": "Tim Cook", "filer_cik": "0001214156", "issuer_ticker": "AAPL", "subtitle": "Apple (AAPL)" },
+  { "kind": "ceo", "name": "Jensen Huang", "filer_cik": "0001197649", "issuer_ticker": "NVDA", "subtitle": "Nvidia (NVDA)" },
+  { "kind": "ceo", "name": "Mark Zuckerberg", "filer_cik": "0001548760", "issuer_ticker": "META", "subtitle": "Meta (META)" },
+  { "kind": "ceo", "name": "Satya Nadella", "filer_cik": "0001513142", "issuer_ticker": "MSFT", "subtitle": "Microsoft (MSFT)" },
+  { "kind": "ceo", "name": "Jamie Dimon", "filer_cik": "0001195345", "issuer_ticker": "JPM", "subtitle": "JPMorgan (JPM)" },
+  { "kind": "ceo", "name": "Elon Musk", "filer_cik": "0001494730", "issuer_ticker": "TSLA", "subtitle": "Tesla (TSLA)" },
+  { "kind": "ceo", "name": "Lisa Su", "filer_cik": "0001405109", "issuer_ticker": "AMD", "subtitle": "AMD" },
+  { "kind": "ceo", "name": "Alex Karp", "filer_cik": "0001823951", "issuer_ticker": "PLTR", "subtitle": "Palantir (PLTR)" },
+  { "kind": "ceo", "name": "Andy Jassy", "filer_cik": "0001374545", "issuer_ticker": "AMZN", "subtitle": "Amazon (AMZN)" },
+  { "kind": "ceo", "name": "Sundar Pichai", "filer_cik": "0001534753", "issuer_ticker": "GOOGL", "subtitle": "Alphabet (GOOGL)" }
+]

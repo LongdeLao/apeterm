@@ -5,9 +5,10 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    app::{App, SettingsItem},
+    app::{App, InputTarget, SettingsItem},
     i18n::{Key, Locale},
     pages::fill::Fill,
     theme::current_theme,
@@ -175,17 +176,26 @@ fn render_reset_confirmation(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::LightRed))
+                .title(" Confirm Reset ")
+                .border_style(Style::default().fg(if app.is_text_input_target(InputTarget::ResetConfirmation) {
+                    Color::LightRed
+                } else {
+                    theme.muted
+                }))
                 .style(Style::default().bg(background)),
         );
 
     frame.render_widget(Clear, area);
     frame.render_widget(panel, area);
-    let label_width = format!("{}: ", app.t(Key::SettingsResetInputLabel)).len() as u16;
-    frame.set_cursor_position(Position::new(
-        area.x.saturating_add(1 + label_width + input.len() as u16),
-        area.y.saturating_add(5),
-    ));
+    if app.is_text_input_target(InputTarget::ResetConfirmation) {
+        let label_width =
+            UnicodeWidthStr::width(format!("{}: ", app.t(Key::SettingsResetInputLabel)).as_str())
+                as u16;
+        frame.set_cursor_position(Position::new(
+            area.x.saturating_add(1 + label_width + UnicodeWidthStr::width(input) as u16),
+            area.y.saturating_add(5),
+        ));
+    }
 }
 
 fn locale_label(app: &App, locale: &Locale) -> String {

@@ -28,6 +28,8 @@ pub enum Key {
     PanelTitleCalendar,
     #[strum(serialize = "panel.title.notes")]
     PanelTitleNotes,
+    #[strum(serialize = "panel.title.sec")]
+    PanelTitleSec,
     #[strum(serialize = "panel.title.agent")]
     PanelTitleAgent,
     #[strum(serialize = "panel.title.picker")]
@@ -124,6 +126,8 @@ pub enum Key {
     NewsEmptyWatchlistMatches,
     #[strum(serialize = "news.footer")]
     NewsFooter,
+    #[strum(serialize = "sec.footer")]
+    SecFooter,
     #[strum(serialize = "news.status.loading")]
     NewsStatusLoading,
     #[strum(serialize = "news.status.error")]
@@ -152,14 +156,22 @@ pub enum Key {
     NewsDetailSummary,
     #[strum(serialize = "notes.empty")]
     NotesEmpty,
-    #[strum(serialize = "notes.language")]
-    NotesLanguage,
-    #[strum(serialize = "notes.theme")]
-    NotesTheme,
-    #[strum(serialize = "notes.session.logged_in")]
-    NotesSessionLoggedIn,
-    #[strum(serialize = "notes.session.logged_out")]
-    NotesSessionLoggedOut,
+    #[strum(serialize = "notes.footer")]
+    NotesFooter,
+    #[strum(serialize = "notes.edit_footer")]
+    NotesEditFooter,
+    #[strum(serialize = "notes.delete_confirm_footer")]
+    NotesDeleteConfirmFooter,
+    #[strum(serialize = "notes.search_footer")]
+    NotesSearchFooter,
+    #[strum(serialize = "notes.detail.tags")]
+    NotesDetailTags,
+    #[strum(serialize = "notes.detail.tickers")]
+    NotesDetailTickers,
+    #[strum(serialize = "notes.detail.created")]
+    NotesDetailCreated,
+    #[strum(serialize = "notes.detail.updated")]
+    NotesDetailUpdated,
     #[strum(serialize = "search.filter.stocks")]
     SearchFilterStocks,
     #[strum(serialize = "search.filter.etfs")]

@@ -71,8 +71,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         render_news_list(frame, app, chunks[2], &rows);
     }
 
-    render_status_line(frame, app, chunks[3]);
-
     if let Some(item) = &app.selected_news {
         render_detail(frame, app, area, item);
     }
@@ -266,20 +264,6 @@ fn render_source_cell(item: &NewsItem, theme_name: crate::app::ThemeName) -> Lin
 fn render_gap(frame: &mut Frame, area: Rect) {
     frame.render_widget(
         Paragraph::new(" ").style(Style::default().bg(Color::Reset)),
-        area,
-    );
-}
-
-fn render_status_line(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = current_theme(app.theme_name);
-    let status = format!(
-        "{} · {} · {}",
-        app.news_source_label,
-        app.news_connection_status,
-        app.news_source_counts_summary(5)
-    );
-    frame.render_widget(
-        Paragraph::new(status).style(Style::default().fg(theme.muted)),
         area,
     );
 }

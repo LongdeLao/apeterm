@@ -8,7 +8,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    app::{App, Page, SearchAssetKind},
+    app::{App, InputTarget, Page, SearchAssetKind},
     i18n::{Key, Locale},
     pages::fill::Fill,
     search::LiveInstrumentDetails,
@@ -62,14 +62,18 @@ pub fn render(frame: &mut Frame, app: &App) {
         Block::default()
             .borders(Borders::ALL)
             .title(" search ")
-            .border_style(Style::default().fg(theme.muted)),
+            .border_style(Style::default().fg(search_border_color(
+                app.is_text_input_target(InputTarget::Search),
+                theme.muted,
+                theme.accent,
+            ))),
     );
     frame.render_widget(input, chunks[0]);
-    if app.page == Page::Search {
+    if app.page == Page::Search && app.is_text_input_target(InputTarget::Search) {
         frame.set_cursor_position(Position::new(
             chunks[0]
                 .x
-                .saturating_add(8 + app.search_query.len() as u16),
+                .saturating_add(9 + UnicodeWidthStr::width(app.search_query.as_str()) as u16),
             chunks[0].y.saturating_add(1),
         ));
     }
@@ -210,7 +214,11 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" results ")
-        .border_style(Style::default().fg(theme.muted));
+        .border_style(Style::default().fg(search_border_color(
+            !app.is_text_input_target(InputTarget::Search),
+            theme.muted,
+            theme.accent,
+        )));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -306,6 +314,10 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
         .style(Style::default().fg(theme.muted)),
         chunks[1],
     );
+}
+
+fn search_border_color(active: bool, muted: Color, accent: Color) -> Color {
+    if active { accent } else { muted }
 }
 
 fn filter_span(label: &str, active: bool, theme: crate::theme::Theme) -> Span<'static> {

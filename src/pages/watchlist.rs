@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
@@ -10,7 +10,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    app::{App, PanelId, WatchlistEditMode, WatchlistEditRow, WatchlistKind},
+    app::{App, InputTarget, PanelId, WatchlistEditMode, WatchlistEditRow, WatchlistKind},
     i18n::Key,
     market::MarketSession,
     pages::panel,
@@ -29,7 +29,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     let inner = panel::content_area(area);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(2),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
         .split(inner);
 
     panel::render_title(
@@ -39,126 +44,116 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         panel_id,
         app.t(Key::PanelTitleWatchlist),
     );
+    render_watchlist_tabs(frame, app, chunks[1]);
 
-    let symbol_width = SYMBOL_WIDTH.max(app.i18n.width(Key::WatchlistSectionStocks));
-
+    let notes_symbols = app.notes_ticker_symbols();
     let mut lines = Vec::new();
-    lines.push(stocks_title(
-        app,
-        app.stock_market_session,
-        theme.foreground,
-        symbol_width,
-    ));
-    push_watchlist_rows(
-        &mut lines,
-        app,
-        WatchlistKind::Stock,
-        symbol_width,
-        theme.foreground,
-        theme.muted,
-    );
-
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        app.t(Key::WatchlistSectionCrypto),
-        Style::default()
-            .fg(theme.foreground)
-            .add_modifier(Modifier::BOLD),
-    )));
-    push_watchlist_rows(
-        &mut lines,
-        app,
-        WatchlistKind::Crypto,
-        symbol_width,
-        theme.foreground,
-        theme.muted,
-    );
-    frame.render_widget(Paragraph::new(lines), chunks[1]);
+    push_watchlist_rows(&mut lines, app, &notes_symbols, theme.foreground, theme.muted);
+    if lines.is_empty() {
+        lines.push(Line::from(""));
+    }
+    frame.render_widget(Paragraph::new(lines), chunks[2]);
+    render_market_state(frame, app, chunks[3]);
 
     if watchlist_input_active(app) {
         render_watchlist_input(frame, app, inner);
     }
 }
 
-fn stocks_title(
-    app: &App,
-    session: Option<MarketSession>,
-    foreground: Color,
-    symbol_width: usize,
-) -> Line<'_> {
-    let (icon, label, color) = match session {
-        Some(MarketSession::PreMarket) => (
-            "\u{F05A8}",
-            app.t(Key::WatchlistMarketPreMarket),
-            Color::Rgb(249, 115, 22),
-        ),
-        Some(MarketSession::Regular) => (
-            "\u{F19C}",
-            app.t(Key::WatchlistMarketRegular),
-            Color::Rgb(156, 163, 175),
-        ),
-        Some(MarketSession::AfterHours) => (
-            "\u{F4EE}",
-            app.t(Key::WatchlistMarketAfterHours),
-            Color::Rgb(168, 85, 247),
-        ),
-        None => (
-            "\u{F110}",
-            app.t(Key::WatchlistMarketPending),
-            Color::Rgb(156, 163, 175),
-        ),
-    };
+fn render_watchlist_tabs(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = current_theme(app.theme_name);
+    let block = Block::default()
+        .borders(Borders::BOTTOM)
+        .border_style(Style::default().fg(theme.muted));
+    frame.render_widget(block, area);
 
-    Line::from(vec![
-        Span::styled(
-            pad_right(app.t(Key::WatchlistSectionStocks), symbol_width),
-            Style::default().fg(foreground).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(icon, Style::default().fg(color)),
-        Span::styled(format!(" {label}"), Style::default().fg(color)),
-    ])
+    let tab_count = app.watchlists().len();
+    let line = Line::from(
+        app.watchlists()
+            .iter()
+            .enumerate()
+            .flat_map(|(index, watchlist)| {
+                let selected = index == app.active_watchlist_index();
+                let style = if selected {
+                    Style::default()
+                        .fg(theme.foreground)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                } else {
+                    Style::default().fg(theme.muted)
+                };
+
+                let mut spans = vec![Span::styled(
+                    format!(" {} ", watchlist.name.to_uppercase()),
+                    style,
+                )];
+                if index + 1 < tab_count {
+                    spans.push(Span::raw("  "));
+                }
+                spans
+            })
+            .chain([Span::raw("  "), Span::styled("+", Style::default().fg(theme.muted))])
+            .collect::<Vec<_>>(),
+    );
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 fn push_watchlist_rows<'a>(
     lines: &mut Vec<Line<'a>>,
     app: &'a App,
-    kind: WatchlistKind,
-    symbol_width: usize,
+    notes_symbols: &std::collections::HashSet<String>,
     foreground: Color,
     muted: Color,
 ) {
+    let symbol_width = app
+        .stock_watchlist()
+        .iter()
+        .chain(app.crypto_watchlist().iter())
+        .map(|symbol| {
+            let label = app.watchlist_display_name(symbol).unwrap_or(symbol);
+            UnicodeWidthStr::width(label)
+        })
+        .max()
+        .unwrap_or(SYMBOL_WIDTH)
+        .max(SYMBOL_WIDTH);
+
     if app.watchlist_editor.is_some() {
-        let add_row = match kind {
-            WatchlistKind::Stock => WatchlistEditRow::AddStock,
-            WatchlistKind::Crypto => WatchlistEditRow::AddCrypto,
-        };
-        let label = match kind {
-            WatchlistKind::Stock => app.t(Key::WatchlistEditAddStock),
-            WatchlistKind::Crypto => app.t(Key::WatchlistEditAddCrypto),
-        };
-        lines.push(edit_action_line(app, add_row, label));
+        lines.push(edit_action_line(
+            app,
+            WatchlistEditRow::AddStock,
+            app.t(Key::WatchlistEditAddStock),
+        ));
+        lines.push(edit_action_line(
+            app,
+            WatchlistEditRow::AddCrypto,
+            app.t(Key::WatchlistEditAddCrypto),
+        ));
+        lines.push(Line::from(""));
     }
 
-    let symbols = match kind {
-        WatchlistKind::Stock => app.stock_watchlist(),
-        WatchlistKind::Crypto => app.crypto_watchlist(),
-    };
-    let quotes = match kind {
-        WatchlistKind::Stock => &app.stock_quotes,
-        WatchlistKind::Crypto => &app.crypto_quotes,
-    };
-
-    for (index, symbol) in symbols.iter().enumerate() {
-        let row = match kind {
-            WatchlistKind::Stock => WatchlistEditRow::Stock(index),
-            WatchlistKind::Crypto => WatchlistEditRow::Crypto(index),
-        };
-        let quote = quotes.iter().find(|quote| quote.symbol == *symbol);
+    for (index, symbol) in app.stock_watchlist().iter().enumerate() {
+        let quote = app.stock_quotes.iter().find(|quote| quote.symbol == *symbol);
         lines.push(symbol_line(
             app,
-            row,
+            WatchlistEditRow::Stock(index),
             app.watchlist_display_name(symbol).unwrap_or(symbol),
+            symbol,
             quote,
+            notes_symbols,
+            foreground,
+            muted,
+            symbol_width,
+        ));
+    }
+
+    for (index, symbol) in app.crypto_watchlist().iter().enumerate() {
+        let quote = app.crypto_quotes.iter().find(|quote| quote.symbol == *symbol);
+        lines.push(symbol_line(
+            app,
+            WatchlistEditRow::Crypto(index),
+            app.watchlist_display_name(symbol).unwrap_or(symbol),
+            symbol,
+            quote,
+            notes_symbols,
             foreground,
             muted,
             symbol_width,
@@ -185,7 +180,9 @@ fn symbol_line<'a>(
     app: &'a App,
     row: WatchlistEditRow,
     display_symbol: &'a str,
+    symbol: &'a str,
     quote: Option<&'a Quote>,
+    notes_symbols: &std::collections::HashSet<String>,
     foreground: Color,
     muted: Color,
     symbol_width: usize,
@@ -209,9 +206,12 @@ fn symbol_line<'a>(
 
     if let Some(quote) = quote {
         quote_line(
+            app,
             prefix,
             quote,
             display_symbol,
+            symbol,
+            notes_symbols,
             base_style,
             selected,
             foreground,
@@ -219,8 +219,9 @@ fn symbol_line<'a>(
         )
     } else {
         Line::from(vec![
+            notes_indicator(app, symbol, notes_symbols),
             Span::styled(
-                format!("{prefix}{display_symbol:<symbol_width$}"),
+                format_symbol_label(prefix, display_symbol, symbol, symbol_width),
                 base_style,
             ),
             Span::styled(
@@ -231,15 +232,22 @@ fn symbol_line<'a>(
     }
 }
 
-fn pad_right(value: &str, width: usize) -> String {
-    let used = UnicodeWidthStr::width(value);
-    format!("{value}{}", " ".repeat(width.saturating_sub(used)))
+fn notes_indicator(app: &App, symbol: &str, notes_symbols: &std::collections::HashSet<String>) -> Span<'static> {
+    if notes_symbols.contains(symbol) {
+        let theme = current_theme(app.theme_name);
+        Span::styled("● ", Style::default().fg(theme.accent))
+    } else {
+        Span::raw("  ")
+    }
 }
 
 fn quote_line<'a>(
+    app: &'a App,
     prefix: &str,
     quote: &'a Quote,
     display_symbol: &'a str,
+    symbol: &'a str,
+    notes_symbols: &std::collections::HashSet<String>,
     base_style: Style,
     selected: bool,
     foreground: Color,
@@ -280,8 +288,9 @@ fn quote_line<'a>(
         Style::default().fg(foreground)
     };
     Line::from(vec![
+        notes_indicator(app, symbol, notes_symbols),
         Span::styled(
-            format!("{prefix}{:<symbol_width$}", display_symbol),
+            format_symbol_label(prefix, display_symbol, symbol, symbol_width),
             symbol_style,
         ),
         Span::styled(format!("{arrow} "), style),
@@ -291,6 +300,45 @@ fn quote_line<'a>(
             Style::default().fg(percent_color),
         ),
     ])
+}
+
+fn render_market_state(frame: &mut Frame, app: &App, area: Rect) {
+    let (icon, label, color) = match app.stock_market_session {
+        Some(MarketSession::PreMarket) => (
+            "\u{F05A8}",
+            app.t(Key::WatchlistMarketPreMarket),
+            Color::Rgb(249, 115, 22),
+        ),
+        Some(MarketSession::Regular) => (
+            "\u{F19C}",
+            app.t(Key::WatchlistMarketRegular),
+            Color::Rgb(156, 163, 175),
+        ),
+        Some(MarketSession::AfterHours) => (
+            "\u{F4EE}",
+            app.t(Key::WatchlistMarketAfterHours),
+            Color::Rgb(168, 85, 247),
+        ),
+        None => (
+            "\u{F110}",
+            app.t(Key::WatchlistMarketPending),
+            Color::Rgb(156, 163, 175),
+        ),
+    };
+    let line = Line::from(vec![
+        Span::styled(icon, Style::default().fg(color)),
+        Span::styled(format!(" {label}"), Style::default().fg(color)),
+    ]);
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
+}
+
+fn format_symbol_label(prefix: &str, display_symbol: &str, symbol: &str, symbol_width: usize) -> String {
+    let label = if display_symbol.eq(symbol) {
+        display_symbol.to_string()
+    } else {
+        format!("{display_symbol} ({symbol})")
+    };
+    format!("{prefix}{label:<symbol_width$}")
 }
 
 fn watchlist_input_active(app: &App) -> bool {
@@ -325,6 +373,7 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
         WatchlistEditMode::ChangeTicker { input, .. } => {
             (app.t(Key::WatchlistEditInputTicker), input.as_str())
         }
+        WatchlistEditMode::CreateWatchlist { input } => ("New Watchlist", input.as_str()),
     };
     let suggestion_count = app.watchlist_suggestions.len().min(6) as u16;
     let modal = centered_rect(area, 62, 3 + suggestion_count);
@@ -356,23 +405,30 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
         ]));
     }
 
+    let focused = app.is_text_input_target(InputTarget::Watchlist);
     let panel = Paragraph::new(lines)
         .style(Style::default().bg(background))
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.accent))
+                .title(" Watchlist Input ")
+                .border_style(Style::default().fg(if focused { theme.accent } else { theme.muted }))
                 .style(Style::default().bg(background)),
         );
 
     frame.render_widget(Clear, modal);
     frame.render_widget(panel, modal);
-    frame.set_cursor_position(Position::new(
-        modal
-            .x
-            .saturating_add(1 + label_text.len() as u16 + input.len() as u16),
-        modal.y.saturating_add(1),
-    ));
+    if focused {
+        frame.set_cursor_position(Position::new(
+            modal
+                .x
+                .saturating_add(
+                    1 + UnicodeWidthStr::width(label_text.as_str()) as u16
+                        + UnicodeWidthStr::width(input) as u16,
+                ),
+            modal.y.saturating_add(1),
+        ));
+    }
 }
 
 fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {

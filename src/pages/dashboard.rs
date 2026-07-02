@@ -9,7 +9,7 @@ use ratatui::{
 use crate::{
     app::{App, PanelId, WindowKind},
     i18n::Key,
-    pages::{calendar, fill::Fill, news, notes, watchlist},
+    pages::{calendar, fill::Fill, news, notes, sec, watchlist},
     theme::current_theme,
     ui,
 };
@@ -40,6 +40,7 @@ fn render_panel(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         WindowKind::Watchlist => watchlist::render(frame, app, area, panel_id),
         WindowKind::Calendar => calendar::render(frame, app, area, panel_id),
         WindowKind::Notes => notes::render(frame, app, area, panel_id),
+        WindowKind::Sec => sec::render(frame, app, area, panel_id),
         WindowKind::Picker => render_picker(frame, app, area, panel_id),
     }
 }

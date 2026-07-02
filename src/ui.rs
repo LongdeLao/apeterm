@@ -62,9 +62,22 @@ fn render_footer(frame: &mut Frame, app: &App) {
 }
 
 fn footer_text(app: &App) -> String {
+    if app.notes_insert_mode {
+        return app.t(Key::NotesEditFooter).to_string();
+    }
+    if app.pending_note_delete.is_some() {
+        return app.t(Key::NotesDeleteConfirmFooter).to_string();
+    }
+    if app.is_text_input_target(crate::app::InputTarget::NotesSearch) {
+        return app.t(Key::NotesSearchFooter).to_string();
+    }
+
     if let Some(editor) = &app.watchlist_editor {
         return match editor.mode {
             Some(WatchlistEditMode::Add { .. }) | Some(WatchlistEditMode::ChangeTicker { .. }) => {
+                app.t(Key::WatchlistEditInputFooter).to_string()
+            }
+            Some(WatchlistEditMode::CreateWatchlist { .. }) => {
                 app.t(Key::WatchlistEditInputFooter).to_string()
             }
             Some(WatchlistEditMode::EditAlias { .. }) | None => {
@@ -92,6 +105,12 @@ fn footer_text(app: &App) -> String {
                 && app.panel_content(PanelId::News) == WindowKind::News =>
         {
             format!("{}  {}", app.t(Key::AppFooter), app.t(Key::NewsFooter))
+        }
+        Page::Dashboard if app.panel_content(app.focused_panel) == WindowKind::Sec => {
+            format!("{}  {}", app.t(Key::AppFooter), app.t(Key::SecFooter))
+        }
+        Page::Dashboard if app.panel_content(app.focused_panel) == WindowKind::Notes => {
+            format!("{}  {}", app.t(Key::AppFooter), app.t(Key::NotesFooter))
         }
         _ => app.t(Key::AppFooter).to_string(),
     }

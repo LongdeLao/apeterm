@@ -185,6 +185,7 @@ install_python_deps() {
   [[ "$INSTALL_PYTHON_DEPS" == "1" ]] || return 0
 
   resolve_python_bin
+  rm -rf "$SHARE_DIR/.venv"
   "$PYTHON_BIN" -m venv "$SHARE_DIR/.venv"
   "$SHARE_DIR/.venv/bin/pip" install --upgrade pip >/dev/null
   "$SHARE_DIR/.venv/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" >/dev/null

@@ -29,6 +29,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub news: NewsConfig,
     #[serde(default)]
+    pub sec: SecConfig,
+    #[serde(default)]
     pub update: UpdateConfig,
 }
 
@@ -42,6 +44,23 @@ pub struct OnboardingConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WatchlistConfig {
+    #[serde(default)]
+    pub lists: Vec<NamedWatchlist>,
+    #[serde(default)]
+    pub active: usize,
+    #[serde(default = "default_crypto_symbols", skip_serializing)]
+    pub crypto_symbols: Vec<String>,
+    #[serde(default = "default_stock_symbols", skip_serializing)]
+    pub stock_symbols: Vec<String>,
+    #[serde(default, skip_serializing)]
+    pub display_names: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NamedWatchlist {
+    #[serde(default = "default_watchlist_name")]
+    pub name: String,
     #[serde(default = "default_crypto_symbols")]
     pub crypto_symbols: Vec<String>,
     #[serde(default = "default_stock_symbols")]
@@ -109,6 +128,17 @@ pub struct NewsConfig {
     pub refresh_interval_seconds: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SecConfig {
+    #[serde(default = "default_sec_user_agent")]
+    pub user_agent: String,
+    #[serde(default = "default_sec_refresh_interval_seconds")]
+    pub refresh_interval_seconds: u64,
+    #[serde(default = "default_sec_requests_per_second")]
+    pub requests_per_second: u32,
+}
+
 impl AppConfig {
     pub fn load() -> io::Result<Self> {
         let mut config = Self::default()?;
@@ -122,7 +152,7 @@ impl AppConfig {
         } else if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
             let bytes = serde_json::to_vec_pretty(&config).map_err(io::Error::other)?;
-            fs::write(&config_path, bytes)?;
+            write_atomic(&config_path, &bytes)?;
         }
 
         if matches!(
@@ -165,6 +195,8 @@ impl AppConfig {
             let _ = config.save();
         }
 
+        config.watchlist.normalize();
+
         Ok(config)
     }
 
@@ -178,7 +210,7 @@ impl AppConfig {
         let config_path = config_path()?;
         ensure_parent(&config_path)?;
         let bytes = serde_json::to_vec_pretty(self).map_err(io::Error::other)?;
-        fs::write(config_path, bytes)
+        write_atomic(&config_path, &bytes)
     }
 }
 
@@ -193,6 +225,7 @@ impl Default for AppConfig {
             metadata_provider: MetadataProviderConfig::default(),
             llm: LlmConfig::default(),
             news: NewsConfig::default(),
+            sec: SecConfig::default(),
             update: UpdateConfig::default(),
         }
     }
@@ -207,8 +240,21 @@ impl Default for OnboardingConfig {
 impl Default for WatchlistConfig {
     fn default() -> Self {
         Self {
+            lists: default_named_watchlists(),
+            active: 0,
             crypto_symbols: default_crypto_symbols(),
             stock_symbols: default_stock_symbols(),
+            display_names: HashMap::new(),
+        }
+    }
+}
+
+impl Default for NamedWatchlist {
+    fn default() -> Self {
+        Self {
+            name: default_watchlist_name(),
+            stock_symbols: default_stock_symbols(),
+            crypto_symbols: Vec::new(),
             display_names: HashMap::new(),
         }
     }
@@ -244,6 +290,47 @@ impl Default for LlmConfig {
     }
 }
 
+impl WatchlistConfig {
+    pub fn normalize(&mut self) {
+        if self.lists.is_empty() {
+            self.lists.push(NamedWatchlist {
+                name: default_watchlist_name(),
+                stock_symbols: std::mem::take(&mut self.stock_symbols),
+                crypto_symbols: Vec::new(),
+                display_names: HashMap::new(),
+            });
+            self.lists.push(NamedWatchlist {
+                name: default_crypto_watchlist_name(),
+                stock_symbols: Vec::new(),
+                crypto_symbols: std::mem::take(&mut self.crypto_symbols),
+                display_names: std::mem::take(&mut self.display_names),
+            });
+        }
+
+        if self.lists.is_empty() {
+            self.lists = default_named_watchlists();
+        }
+
+        for list in &mut self.lists {
+            if list.name.trim().is_empty() {
+                list.name = default_watchlist_name();
+            }
+            list.stock_symbols.sort();
+            list.stock_symbols.dedup();
+            list.crypto_symbols.sort();
+            list.crypto_symbols.dedup();
+            list.display_names.retain(|symbol, _| {
+                list.stock_symbols.contains(symbol) || list.crypto_symbols.contains(symbol)
+            });
+        }
+
+        self.active = self.active.min(self.lists.len().saturating_sub(1));
+        self.stock_symbols.clear();
+        self.crypto_symbols.clear();
+        self.display_names.clear();
+    }
+}
+
 impl Default for NewsConfig {
     fn default() -> Self {
         Self {
@@ -253,6 +340,16 @@ impl Default for NewsConfig {
             enable_financial_juice: default_enable_financial_juice(),
             enable_nasdaq: default_enable_nasdaq(),
             refresh_interval_seconds: default_news_refresh_interval_seconds(),
+        }
+    }
+}
+
+impl Default for SecConfig {
+    fn default() -> Self {
+        Self {
+            user_agent: default_sec_user_agent(),
+            refresh_interval_seconds: default_sec_refresh_interval_seconds(),
+            requests_per_second: default_sec_requests_per_second(),
         }
     }
 }
@@ -287,6 +384,18 @@ pub fn ensure_parent(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    ensure_parent(path)?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("tmp");
+    let temp_path = path.with_file_name(format!(".{file_name}.tmp"));
+    fs::write(&temp_path, bytes)?;
+    fs::rename(temp_path, path)?;
+    Ok(())
+}
+
 fn default_ticker_db_path() -> PathBuf {
     data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
@@ -298,6 +407,31 @@ fn default_crypto_symbols() -> Vec<String> {
         .into_iter()
         .map(str::to_string)
         .collect()
+}
+
+fn default_watchlist_name() -> String {
+    "Main".to_string()
+}
+
+fn default_crypto_watchlist_name() -> String {
+    "Crypto".to_string()
+}
+
+fn default_named_watchlists() -> Vec<NamedWatchlist> {
+    vec![
+        NamedWatchlist {
+            name: default_watchlist_name(),
+            stock_symbols: default_stock_symbols(),
+            crypto_symbols: Vec::new(),
+            display_names: HashMap::new(),
+        },
+        NamedWatchlist {
+            name: default_crypto_watchlist_name(),
+            stock_symbols: Vec::new(),
+            crypto_symbols: default_crypto_symbols(),
+            display_names: HashMap::new(),
+        },
+    ]
 }
 
 fn default_stock_symbols() -> Vec<String> {
@@ -367,6 +501,18 @@ fn default_news_refresh_interval_seconds() -> u64 {
     60
 }
 
+fn default_sec_user_agent() -> String {
+    "ApeTerm/0.1 contact@example.com".to_string()
+}
+
+fn default_sec_refresh_interval_seconds() -> u64 {
+    60 * 60
+}
+
+fn default_sec_requests_per_second() -> u32 {
+    8
+}
+
 fn should_migrate_legacy_news_feeds(feeds: &[String]) -> bool {
     !feeds.is_empty() && feeds.iter().all(|feed| is_legacy_news_feed(feed.as_str()))
 }
@@ -383,7 +529,7 @@ mod tests {
 
     #[test]
     fn deserializes_partial_config_with_defaults() {
-        let config: AppConfig = serde_json::from_str(
+        let mut config: AppConfig = serde_json::from_str(
             r#"{
                 "locale": "de",
                 "theme": "light",
@@ -393,12 +539,17 @@ mod tests {
             }"#,
         )
         .unwrap();
+        config.watchlist.normalize();
 
         assert_eq!(config.locale, Locale::De);
         assert_eq!(config.theme, ThemeName::Light);
-        assert_eq!(config.watchlist.stock_symbols, vec!["SAP", "DTE.DE"]);
+        assert_eq!(config.watchlist.lists.len(), 2);
         assert_eq!(
-            config.watchlist.crypto_symbols,
+            config.watchlist.lists[0].stock_symbols,
+            vec!["DTE.DE", "SAP"]
+        );
+        assert_eq!(
+            config.watchlist.lists[1].crypto_symbols,
             vec!["BTCUSDT", "ETHUSDT", "SOLUSDT"]
         );
         assert!(!config.onboarding.completed);

@@ -10,7 +10,9 @@ crossterm = "0.29.0"
 directories = "6.0"
 dotenvy = "0.15"
 fuzzy-matcher = "0.3"
+quick-xml = { version = "0.38", features = ["serialize"] }
 ratatui = "0.30.2"
+regex = "1.11"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 rss = "2.0"
 rusqlite = { version = "0.32", features = ["bundled"] }

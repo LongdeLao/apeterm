@@ -8,7 +8,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    app::{AgentRole, App, Page},
+    app::{AgentRole, App, InputTarget, Page},
     i18n::Key,
     theme::current_theme,
     ui,
@@ -95,6 +95,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         ),
         Span::styled("  streaming", Style::default().fg(theme.muted)),
     ]));
+    let input_focused = app.is_text_input_target(InputTarget::Agent);
     let input = Paragraph::new(Line::from(vec![
         Span::styled(
             "> ",
@@ -106,7 +107,13 @@ pub fn render(frame: &mut Frame, app: &App) {
             app.agent_input.as_str(),
             Style::default().fg(theme.foreground),
         ),
-    ]));
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(if input_focused { theme.accent } else { theme.muted }))
+            .title(Span::styled("Agent Input", Style::default().fg(theme.muted))),
+    );
 
     let panel = Block::default()
         .borders(Borders::ALL)
@@ -122,10 +129,12 @@ pub fn render(frame: &mut Frame, app: &App) {
     frame.render_widget(transcript, chunks[1]);
     frame.render_widget(input, chunks[2]);
 
-    if app.page == Page::Agent {
+    if app.page == Page::Agent && input_focused {
         frame.set_cursor_position(Position::new(
-            chunks[2].x.saturating_add(2 + app.agent_input.len() as u16),
-            chunks[2].y,
+            chunks[2]
+                .x
+                .saturating_add(3 + UnicodeWidthStr::width(app.agent_input.as_str()) as u16),
+            chunks[2].y.saturating_add(1),
         ));
     }
 }

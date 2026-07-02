@@ -14,13 +14,14 @@ mod news;
 mod pages;
 mod quotes;
 mod search;
+mod sec;
 mod theme;
 mod ui;
 
 use app::App;
 use config::{AppConfig, MetadataProviderKind};
 use crossterm::{
-    cursor::{Hide, MoveTo, Show},
+    cursor::{Hide, MoveTo, SetCursorStyle, Show},
     event as crossterm_event, execute,
     terminal::{
         Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
@@ -40,11 +41,18 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     let config = AppConfig::load()?;
+    if args.first().map(String::as_str) == Some("sec-sync") {
+        let synced = sec::sync::sync_all_verbose(&config.ticker_db_path, &config.sec)
+            .map_err(io::Error::other)?;
+        println!("synced {synced} sec entities");
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("update") {
         return run_update(config, update_limit(&args));
     }
 
-    let _ = db::open(&config.ticker_db_path)?;
+    let connection = db::open(&config.ticker_db_path)?;
+    sec::ensure_seeded(&connection)?;
     let mut stdout = io::stdout();
     enable_raw_mode()?;
     execute!(
@@ -52,6 +60,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         EnterAlternateScreen,
         Clear(ClearType::All),
         MoveTo(0, 0),
+        SetCursorStyle::SteadyBar,
         Hide
     )?;
 
@@ -66,14 +75,15 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let (market_sender, market_events) = market::market_channel();
     market::spawn_market_streams(
         market_sender.clone(),
-        config.watchlist.crypto_symbols.clone(),
-        config.watchlist.stock_symbols.clone(),
+        app.crypto_watchlist().to_vec(),
+        app.stock_watchlist().to_vec(),
     );
 
     let result = run_app(&mut terminal, &mut app, market_sender, market_events);
 
     execute!(
         terminal.backend_mut(),
+        SetCursorStyle::DefaultUserShape,
         Show,
         MoveTo(0, 0),
         Clear(ClearType::All),
@@ -96,6 +106,7 @@ fn run_app(
             app.handle_market_event(event);
         }
         app.poll_news();
+        app.poll_sec();
         if app.take_market_refresh_request() {
             market::spawn_market_streams(
                 market_sender.clone(),

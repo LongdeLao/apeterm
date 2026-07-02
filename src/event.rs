@@ -1,7 +1,8 @@
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::app::{
-    App, MoveDirection, Page, PanelId, SelectionDirection, SplitDirection, WatchlistKind,
+    App, AppMode, InputTarget, MoveDirection, Page, PanelId, SelectionDirection,
+    SplitDirection, WatchlistKind, WindowKind,
 };
 
 pub fn handle_event(app: &mut App, event: Event) {
@@ -12,6 +13,12 @@ pub fn handle_event(app: &mut App, event: Event) {
 }
 
 fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
+    if let AppMode::TextInput(target) = app.mode {
+        if handle_text_input_key(app, target, key_code, modifiers) {
+            return;
+        }
+    }
+
     let is_control = modifiers.contains(KeyModifiers::CONTROL);
 
     if key_code == KeyCode::Char('a') && !is_control && can_open_agent(app) {
@@ -43,6 +50,10 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
                 app.advance_onboarding();
             } else if app.page == Page::Dashboard && app.focused_panel == PanelId::News {
                 app.open_selected_news();
+            } else if app.page == Page::Dashboard
+                && app.panel_content(app.focused_panel) == WindowKind::Notes
+            {
+                app.enter_note_insert_mode();
             } else if app.page == Page::Dashboard {
                 app.confirm_window_picker();
             } else if app.page == Page::Search {
@@ -65,13 +76,7 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
 }
 
 fn can_open_agent(app: &App) -> bool {
-    if app.page == Page::Agent || app.reset_confirmation.is_some() {
-        return false;
-    }
-
-    !app.watchlist_editor
-        .as_ref()
-        .is_some_and(|editor| editor.mode.is_some())
+    app.page != Page::Agent && !app.is_text_input_active()
 }
 
 fn handle_onboarding_key(app: &mut App, key_code: KeyCode) {
@@ -120,9 +125,31 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         return;
     }
 
+    if app.focused_panel == PanelId::Watchlist && handle_watchlist_panel_key(app, key_code) {
+        return;
+    }
+
+    if handle_notes_key(app, key_code) {
+        return;
+    }
+
     match (key_code, is_control) {
-        (KeyCode::Tab, false) => app.focus_next_panel(),
-        (KeyCode::BackTab, false) => app.focus_previous_panel(),
+        (KeyCode::Tab, false) => {
+            app.focus_next_panel();
+            return;
+        }
+        (KeyCode::BackTab, false) => {
+            app.focus_previous_panel();
+            return;
+        }
+        _ => {}
+    }
+
+    if handle_sec_key(app, key_code) {
+        return;
+    }
+
+    match (key_code, is_control) {
         (KeyCode::Char('n'), false) => app.focus_next_panel(),
         (KeyCode::Char('p'), false) => app.focus_previous_panel(),
         (KeyCode::Char('h'), true) => app.resize_dashboard(MoveDirection::Left),
@@ -190,6 +217,93 @@ fn handle_news_key(app: &mut App, key_code: KeyCode) -> bool {
     }
 }
 
+fn handle_notes_key(app: &mut App, key_code: KeyCode) -> bool {
+    if app.panel_content(app.focused_panel) != WindowKind::Notes {
+        return false;
+    }
+
+    if app.pending_note_delete.is_some() {
+        match key_code {
+            KeyCode::Char('d') | KeyCode::Char('y') => app.confirm_delete_note(),
+            _ => app.cancel_delete_note(),
+        }
+        return true;
+    }
+
+    match key_code {
+        KeyCode::Left => {
+            app.cycle_notes_tab(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::Right => {
+            app.cycle_notes_tab(SelectionDirection::Next);
+            true
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.move_notes_selection(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.move_notes_selection(SelectionDirection::Next);
+            true
+        }
+        KeyCode::Enter | KeyCode::Char('i') => {
+            app.enter_note_insert_mode();
+            true
+        }
+        KeyCode::Char('n') => {
+            app.create_new_note();
+            true
+        }
+        KeyCode::Char('d') => {
+            app.begin_delete_selected_note();
+            true
+        }
+        KeyCode::Char('p') => {
+            app.toggle_selected_note_pin();
+            true
+        }
+        KeyCode::Char('/') => {
+            app.begin_notes_search();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_sec_key(app: &mut App, key_code: KeyCode) -> bool {
+    if app.focused_panel != PanelId::Notes && app.focused_panel != PanelId::Calendar {
+        return false;
+    }
+    if app.panel_content(app.focused_panel) != crate::app::WindowKind::Sec {
+        return false;
+    }
+
+    match key_code {
+        KeyCode::Left => {
+            app.cycle_sec_tab(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::Right => {
+            app.cycle_sec_tab(SelectionDirection::Next);
+            true
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.move_sec_selection(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.move_sec_selection(SelectionDirection::Next);
+            true
+        }
+        KeyCode::Char('r') => {
+            app.refresh_selected_sec_entity();
+            true
+        }
+        _ => false,
+    }
+}
+
 fn handle_agent_key(app: &mut App, key_code: KeyCode) {
     match key_code {
         KeyCode::Up => app.move_agent_scroll(SelectionDirection::Previous),
@@ -204,27 +318,70 @@ fn handle_agent_key(app: &mut App, key_code: KeyCode) {
     }
 }
 
+fn handle_text_input_key(
+    app: &mut App,
+    target: InputTarget,
+    key_code: KeyCode,
+    _modifiers: KeyModifiers,
+) -> bool {
+    // Notes insert mode owns its own key handling: Enter inserts a newline
+    // rather than submitting, and Esc leaves insert mode instead of
+    // discarding the draft.
+    if target == InputTarget::Notes {
+        match key_code {
+            KeyCode::Esc => app.exit_note_insert_mode(),
+            KeyCode::Enter => app.insert_note_draft_newline(),
+            KeyCode::Backspace => app.pop_note_draft_char(),
+            KeyCode::Char(character) => app.push_note_draft_char(character),
+            KeyCode::Up => app.move_note_suggestion(SelectionDirection::Previous),
+            KeyCode::Down => app.move_note_suggestion(SelectionDirection::Next),
+            KeyCode::Tab => app.accept_note_suggestion(),
+            _ => {}
+        }
+        return true;
+    }
+
+    match key_code {
+        KeyCode::Esc => {
+            app.cancel_text_input();
+            true
+        }
+        KeyCode::Enter => {
+            app.submit_text_input();
+            true
+        }
+        KeyCode::Backspace => {
+            app.pop_text_input_char();
+            true
+        }
+        KeyCode::Char(character) => {
+            app.push_text_input_char(character);
+            true
+        }
+        KeyCode::Up if target == InputTarget::Watchlist => {
+            app.move_watchlist_suggestion(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::Down if target == InputTarget::Watchlist => {
+            app.move_watchlist_suggestion(SelectionDirection::Next);
+            true
+        }
+        _ if target == InputTarget::NotesSearch => true,
+        _ => false,
+    }
+}
+
 fn handle_search_key(app: &mut App, key_code: KeyCode) {
     match key_code {
-        KeyCode::Tab | KeyCode::BackTab => app.toggle_search_asset_kind(),
+        KeyCode::Char('/') | KeyCode::Char('i') => app.begin_text_input(InputTarget::Search),
+        KeyCode::Left | KeyCode::Right => app.toggle_search_asset_kind(),
         KeyCode::Up | KeyCode::Char('k') => app.move_search_selection(SelectionDirection::Previous),
         KeyCode::Down | KeyCode::Char('j') => app.move_search_selection(SelectionDirection::Next),
-        KeyCode::Backspace => app.pop_search_char(),
-        KeyCode::Char(character) => app.push_search_char(character),
         _ => {}
     }
 }
 
 fn handle_settings_key(app: &mut App, key_code: KeyCode) {
-    if app.reset_confirmation.is_some() {
-        match key_code {
-            KeyCode::Backspace => app.pop_reset_confirmation_char(),
-            KeyCode::Char(character) => app.push_reset_confirmation_char(character),
-            _ => {}
-        }
-        return;
-    }
-
     match key_code {
         KeyCode::Left | KeyCode::Char('h') => {
             app.adjust_settings_item(SelectionDirection::Previous)
@@ -240,22 +397,13 @@ fn handle_settings_key(app: &mut App, key_code: KeyCode) {
 }
 
 fn handle_watchlist_edit_key(app: &mut App, key_code: KeyCode) {
-    if app
-        .watchlist_editor
-        .as_ref()
-        .is_some_and(|editor| editor.mode.is_some())
-    {
-        match key_code {
-            KeyCode::Up => app.move_watchlist_suggestion(SelectionDirection::Previous),
-            KeyCode::Down => app.move_watchlist_suggestion(SelectionDirection::Next),
-            KeyCode::Backspace => app.pop_watchlist_input_char(),
-            KeyCode::Char(character) => app.push_watchlist_input_char(character),
-            _ => {}
-        }
-        return;
-    }
-
     match key_code {
+        KeyCode::Left => {
+            app.cycle_active_watchlist(SelectionDirection::Previous)
+        }
+        KeyCode::Right => {
+            app.cycle_active_watchlist(SelectionDirection::Next)
+        }
         KeyCode::Up | KeyCode::Char('k') => {
             app.move_watchlist_selection(SelectionDirection::Previous)
         }
@@ -263,8 +411,40 @@ fn handle_watchlist_edit_key(app: &mut App, key_code: KeyCode) {
             app.move_watchlist_selection(SelectionDirection::Next)
         }
         KeyCode::Char('c') => app.begin_watchlist_add(WatchlistKind::Crypto),
+        KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Char('w') => {
+            app.begin_watchlist_create()
+        }
+        KeyCode::Char('x') => app.delete_active_watchlist(),
         KeyCode::Char('t') => app.begin_selected_watchlist_ticker_change(),
         KeyCode::Char('d') => app.delete_selected_watchlist_symbol(),
+        KeyCode::Char('v') => app.jump_to_selected_watchlist_row_notes(),
         _ => {}
+    }
+}
+
+fn handle_watchlist_panel_key(app: &mut App, key_code: KeyCode) -> bool {
+    if !app.is_editing_watchlist() {
+        match key_code {
+            KeyCode::Left => {
+                app.cycle_active_watchlist(SelectionDirection::Previous);
+                true
+            }
+            KeyCode::Right => {
+                app.cycle_active_watchlist(SelectionDirection::Next);
+                true
+            }
+            KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Char('w') => {
+                app.open_watchlist_editor();
+                app.begin_watchlist_create();
+                true
+            }
+            KeyCode::Char('x') => {
+                app.delete_active_watchlist();
+                true
+            }
+            _ => false,
+        }
+    } else {
+        false
     }
 }

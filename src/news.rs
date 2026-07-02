@@ -898,7 +898,7 @@ fn normalize_match_term(value: &str) -> String {
         .join(" ")
 }
 
-fn contains_symbol(text: &str, symbol: &str) -> bool {
+pub fn contains_symbol(text: &str, symbol: &str) -> bool {
     if symbol.is_empty() {
         return false;
     }
