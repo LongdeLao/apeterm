@@ -139,7 +139,8 @@ python_is_supported() {
   local python_bin="$1"
   "$python_bin" - <<'EOF' >/dev/null 2>&1
 import sys
-raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+version = sys.version_info
+raise SystemExit(0 if (3, 10) <= version[:2] <= (3, 13) else 1)
 EOF
 }
 
@@ -147,7 +148,7 @@ resolve_python_bin() {
   if [[ -n "$PYTHON_BIN" ]]; then
     need_cmd "$PYTHON_BIN"
     if ! python_is_supported "$PYTHON_BIN"; then
-      echo "error: $PYTHON_BIN must be Python 3.10 or newer" >&2
+      echo "error: $PYTHON_BIN must be Python 3.10 through 3.13" >&2
       exit 1
     fi
     return
@@ -155,12 +156,15 @@ resolve_python_bin() {
 
   local candidate
   for candidate in \
-    /opt/homebrew/bin/python3 \
-    python3.14 \
-    python3.13 \
+    /opt/homebrew/bin/python3.12 \
+    /opt/homebrew/bin/python3.11 \
+    /opt/homebrew/bin/python3.10 \
+    /opt/homebrew/bin/python3.13 \
     python3.12 \
     python3.11 \
     python3.10 \
+    python3.13 \
+    /opt/homebrew/bin/python3 \
     python3 \
     python
   do
@@ -170,8 +174,8 @@ resolve_python_bin() {
     fi
   done
 
-  echo "error: ApeTerm requires Python 3.10+ to install bundled market data dependencies" >&2
-  echo "install Python and rerun, or set PYTHON_BIN=/path/to/python3.10+" >&2
+  echo "error: ApeTerm requires Python 3.10 through 3.13 to install bundled market data dependencies" >&2
+  echo "install Python and rerun, or set PYTHON_BIN=/path/to/python3.10-3.13" >&2
   exit 1
 }
 
