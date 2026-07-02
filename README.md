@@ -5,7 +5,7 @@
 1. Do this:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/apeterm/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/LongdeLao/apeterm/master/install.sh | bash
 ```
 2. Run this:
 
