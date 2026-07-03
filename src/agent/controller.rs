@@ -20,7 +20,9 @@ use std::{
 use crate::{
     agent::{
         llm_client::{LlmClient, LlmError},
-        messages::{AgentMessage, AgentRole, LlmMessage, LlmRequest, LlmResponse, LlmRole},
+        messages::{
+            AgentMessage, AgentRole, Badge, LlmMessage, LlmRequest, LlmResponse, LlmRole,
+        },
         openrouter::OpenRouterClient,
         tool_call::{AssistantAction, ToolCall, ToolResult, parse_assistant_action},
         tools,
@@ -68,6 +70,12 @@ pub struct AgentController {
     history: Vec<LlmMessage>,
     receiver: Option<Receiver<Result<LlmResponse, LlmError>>>,
     tool_rounds: u8,
+    /// Label shown next to the spinner while busy (the model's tool "note",
+    /// or a generic fallback).
+    work_label: String,
+    /// Whether any tool this turn succeeded (`Some(true)`) or failed
+    /// (`Some(false)`); folded into the final assistant message as a badge.
+    turn_status: Option<bool>,
 }
 
 impl std::fmt::Debug for dyn LlmClient {
@@ -105,6 +113,8 @@ impl AgentController {
             history: Vec::new(),
             receiver: None,
             tool_rounds: 0,
+            work_label: "thinking".to_string(),
+            turn_status: None,
         }
     }
 
@@ -127,8 +137,11 @@ impl AgentController {
         self.messages.push(AgentMessage {
             role: AgentRole::User,
             content: prompt.clone(),
+            badge: None,
         });
         self.auto_scroll = true;
+        self.work_label = "thinking".to_string();
+        self.turn_status = None;
 
         if self.client.is_none() {
             self.status = Some(
@@ -182,15 +195,20 @@ impl AgentController {
             AssistantAction::Message(text) => {
                 self.history
                     .push(LlmMessage::new(LlmRole::Assistant, response.content));
-                self.push_display(AgentRole::Assistant, text);
+                let badge = self.turn_status.map(|ok| {
+                    if ok { Badge::Ok } else { Badge::Failed }
+                });
+                self.push_message(AgentRole::Assistant, text, badge);
                 self.finish_turn(None);
                 None
             }
             AssistantAction::ToolCall { call, note } => {
                 self.history
                     .push(LlmMessage::new(LlmRole::Assistant, response.content));
+                // The note is shown transiently beside the spinner, not as its
+                // own transcript bubble.
                 if let Some(note) = note {
-                    self.push_display(AgentRole::Assistant, note);
+                    self.work_label = note;
                 }
                 Some(call)
             }
@@ -204,13 +222,17 @@ impl AgentController {
     }
 
     /// Feeds a tool result back to the model and continues the turn, unless
-    /// the tool-round budget is exhausted.
+    /// the tool-round budget is exhausted. The result is not shown directly;
+    /// its success is folded into the next assistant message's badge.
     pub fn push_tool_result(&mut self, result: ToolResult) {
-        let marker = if result.success { "✓" } else { "✗" };
-        self.push_display(
-            AgentRole::Tool,
-            format!("{marker} {}", compact(&result.message)),
-        );
+        if result.success {
+            // A later failure downgrades the turn; don't upgrade back.
+            if self.turn_status != Some(false) {
+                self.turn_status = Some(true);
+            }
+        } else {
+            self.turn_status = Some(false);
+        }
         self.history
             .push(LlmMessage::new(LlmRole::Tool, result.to_json()));
 
@@ -230,11 +252,7 @@ impl AgentController {
 
         self.busy = true;
         // Rendered as a spinner label while busy.
-        self.status = Some(if self.tool_rounds == 0 {
-            "thinking".to_string()
-        } else {
-            "working".to_string()
-        });
+        self.status = Some(self.work_label.clone());
         let request = LlmRequest {
             messages: self.history.clone(),
         };
@@ -256,8 +274,12 @@ impl AgentController {
         self.status = status;
     }
 
-    fn push_display(&mut self, role: AgentRole, content: String) {
-        self.messages.push(AgentMessage { role, content });
+    fn push_message(&mut self, role: AgentRole, content: String, badge: Option<Badge>) {
+        self.messages.push(AgentMessage {
+            role,
+            content,
+            badge,
+        });
         if self.auto_scroll {
             self.scroll = u16::MAX;
         }
@@ -272,14 +294,14 @@ impl AgentController {
         self.auto_scroll = true;
         self.scroll = u16::MAX;
     }
-}
 
-/// Tool results can be multi-line (e.g. context dumps); keep the transcript
-/// entry to a single compact line.
-fn compact(message: &str) -> String {
-    let mut line = message.lines().next().unwrap_or_default().to_string();
-    if message.lines().count() > 1 {
-        line.push_str(" …");
+    /// Conversation-starter chips shown in the empty state.
+    pub fn suggestions() -> &'static [&'static str] {
+        &[
+            "Add or remove from watchlist",
+            "Create a new watchlist",
+            "Open a stock's details",
+            "What's on my watchlists?",
+        ]
     }
-    line
 }

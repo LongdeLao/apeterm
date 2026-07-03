@@ -27,6 +27,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub llm: LlmConfig,
     #[serde(default)]
+    pub backend: BackendConfig,
+    #[serde(default)]
     pub news: NewsConfig,
     #[serde(default)]
     pub sec: SecConfig,
@@ -113,6 +115,17 @@ pub struct LlmConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct BackendConfig {
+    #[serde(default = "default_backend_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_backend_base_url")]
+    pub base_url: String,
+    #[serde(default = "default_backend_timeout_seconds")]
+    pub timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct NewsConfig {
     #[serde(default = "default_news_feeds")]
     pub feeds: Vec<String>,
@@ -190,6 +203,13 @@ impl AppConfig {
             config.llm.api_key = Some(api_key);
         }
 
+        if let Ok(enabled) = env::var("APETERM_BACKEND_ENABLED") {
+            config.backend.enabled = enabled != "0" && !enabled.eq_ignore_ascii_case("false");
+        }
+        if let Ok(base_url) = env::var("APETERM_BACKEND_BASE_URL") {
+            config.backend.base_url = base_url;
+        }
+
         if should_migrate_legacy_news_feeds(&config.news.feeds) {
             config.news.feeds = default_news_feeds();
             let _ = config.save();
@@ -224,6 +244,7 @@ impl Default for AppConfig {
             watchlist: WatchlistConfig::default(),
             metadata_provider: MetadataProviderConfig::default(),
             llm: LlmConfig::default(),
+            backend: BackendConfig::default(),
             news: NewsConfig::default(),
             sec: SecConfig::default(),
             update: UpdateConfig::default(),
@@ -328,6 +349,16 @@ impl WatchlistConfig {
         self.stock_symbols.clear();
         self.crypto_symbols.clear();
         self.display_names.clear();
+    }
+}
+
+impl Default for BackendConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_backend_enabled(),
+            base_url: default_backend_base_url(),
+            timeout_seconds: default_backend_timeout_seconds(),
+        }
     }
 }
 
@@ -467,6 +498,18 @@ fn default_llm_model() -> String {
     "openrouter/free".to_string()
 }
 
+fn default_backend_enabled() -> bool {
+    true
+}
+
+fn default_backend_base_url() -> String {
+    "http://localhost:8080".to_string()
+}
+
+fn default_backend_timeout_seconds() -> u64 {
+    8
+}
+
 fn default_news_feeds() -> Vec<String> {
     vec![
         "https://news.google.com/rss/search?q=markets&hl=en-US&gl=US&ceid=US:en".to_string(),
@@ -555,6 +598,9 @@ mod tests {
         assert!(!config.onboarding.completed);
         assert_eq!(config.metadata_provider.requests_per_minute, 600);
         assert_eq!(config.update.enrich_max_age_hours, 24);
+        assert!(config.backend.enabled);
+        assert_eq!(config.backend.base_url, "http://localhost:8080");
+        assert_eq!(config.backend.timeout_seconds, 8);
         assert!(config.news.enable_rss);
         assert!(config.news.enable_financial_juice);
         assert!(config.news.enable_nasdaq);

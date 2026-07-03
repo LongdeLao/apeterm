@@ -1,14 +1,14 @@
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Modifier, Style},
     widgets::Paragraph,
+    Frame,
 };
 
 use crate::{
     app::{App, Page, PanelId, WatchlistEditMode, WindowKind},
     i18n::Key,
-    pages::{agent, dashboard, onboarding, search, settings},
+    pages::{agent, dashboard, onboarding, search, settings, spotlight},
     theme::current_theme,
 };
 
@@ -24,16 +24,20 @@ pub fn render(frame: &mut Frame, app: &App) {
     if app.agent.panel_open {
         let [_main_area, agent_area] = split_content_area(frame.area(), app);
         if agent_area.width > 0 {
-            frame.render_widget(
-                Paragraph::new("").style(
-                    Style::default()
-                        .bg(current_theme(app.theme_name).background.unwrap_or_default()),
-                ),
-                agent_area,
-            );
+            if let Some(background) = current_theme(app.theme_name).background {
+                frame.render_widget(
+                    Paragraph::new("").style(Style::default().bg(background)),
+                    agent_area,
+                );
+            }
             agent::render(frame, app, agent_area);
         }
     }
+
+    if app.spotlight.open {
+        spotlight::render(frame, app);
+    }
+
     render_footer(frame, app);
 }
 
@@ -44,15 +48,25 @@ pub fn content_area(area: Rect, app: &App) -> Rect {
 pub fn split_content_area(area: Rect, app: &App) -> [Rect; 2] {
     let content = Rect::new(area.x, area.y, area.width, area.height.saturating_sub(1));
     if !app.agent.panel_open || content.width < 72 {
-        return [content, Rect::new(content.right(), content.y, 0, content.height)];
+        return [
+            content,
+            Rect::new(content.right(), content.y, 0, content.height),
+        ];
     }
 
     let agent_width = content.width.saturating_mul(32) / 100;
-    let agent_width = agent_width.clamp(36, 44).min(content.width.saturating_sub(24));
+    let agent_width = agent_width
+        .clamp(36, 44)
+        .min(content.width.saturating_sub(24));
     let main_width = content.width.saturating_sub(agent_width);
     [
         Rect::new(content.x, content.y, main_width, content.height),
-        Rect::new(content.x + main_width, content.y, agent_width, content.height),
+        Rect::new(
+            content.x + main_width,
+            content.y,
+            agent_width,
+            content.height,
+        ),
     ]
 }
 
@@ -81,6 +95,9 @@ fn render_footer(frame: &mut Frame, app: &App) {
 }
 
 fn footer_text(app: &App) -> String {
+    if app.spotlight.open {
+        return app.t(Key::SpotlightFooter).to_string();
+    }
     if app.notes_insert_mode {
         return app.t(Key::NotesEditFooter).to_string();
     }

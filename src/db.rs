@@ -48,6 +48,8 @@ pub fn initialize(connection: &Connection) -> Result<()> {
           ON instruments(last_updated);
         CREATE INDEX IF NOT EXISTS instruments_sector_idx
           ON instruments(sector);
+        CREATE INDEX IF NOT EXISTS instruments_name_idx
+          ON instruments(name);
 
         CREATE VIEW IF NOT EXISTS stocks AS
           SELECT symbol, name, exchange, sector, industry, currency, active, last_updated

@@ -9,4 +9,5 @@ pub mod panel;
 pub mod search;
 pub mod sec;
 pub mod settings;
+pub mod spotlight;
 pub mod watchlist;

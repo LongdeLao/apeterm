@@ -180,6 +180,10 @@ pub enum Key {
     SearchHelpTabSwitches,
     #[strum(serialize = "search.footer")]
     SearchFooter,
+    #[strum(serialize = "spotlight.title")]
+    SpotlightTitle,
+    #[strum(serialize = "spotlight.footer")]
+    SpotlightFooter,
     #[strum(serialize = "search.empty")]
     SearchEmpty,
     #[strum(serialize = "search.header.symbol")]

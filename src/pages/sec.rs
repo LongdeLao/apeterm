@@ -1,10 +1,10 @@
 use chrono::{DateTime, Local};
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
+    Frame,
 };
 
 use crate::{
@@ -34,7 +34,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         ])
         .split(inner);
 
-    panel::render_title(frame, app, chunks[0], panel_id, app.t(crate::i18n::Key::PanelTitleSec));
+    panel::render_title(
+        frame,
+        app,
+        chunks[0],
+        panel_id,
+        app.t(crate::i18n::Key::PanelTitleSec),
+    );
     render_tabs(frame, app, chunks[1]);
 
     let Ok(connection) = db::open(&app.ticker_db_path) else {
@@ -64,14 +70,20 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(chunks[2]);
-    let selected_index = app.active_sec_selection().min(entities.len().saturating_sub(1));
+    let selected_index = app
+        .active_sec_selection()
+        .min(entities.len().saturating_sub(1));
     let selected_entity = &entities[selected_index];
 
     render_watchlist(frame, app, panes[0], &connection, &entities, selected_index);
     match app.sec_tab {
-        SecTab::Institutional => render_institution_detail(frame, app, panes[1], &connection, selected_entity),
+        SecTab::Institutional => {
+            render_institution_detail(frame, app, panes[1], &connection, selected_entity)
+        }
         SecTab::Ceos => render_ceo_detail(frame, app, panes[1], &connection, selected_entity),
-        SecTab::Congress => render_congress_detail(frame, app, panes[1], &connection, selected_entity),
+        SecTab::Congress => {
+            render_congress_detail(frame, app, panes[1], &connection, selected_entity)
+        }
     }
 
     let footer = app
@@ -135,22 +147,25 @@ fn render_watchlist(
         SecTab::Ceos => " insiders ",
         SecTab::Congress => " members ",
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .border_style(Style::default().fg(theme.muted));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = area;
 
     let visible_height = inner.height as usize;
     if visible_height == 0 {
+        return;
+    }
+    let mut lines = vec![Line::from(Span::styled(
+        title.trim(),
+        Style::default().fg(theme.muted).add_modifier(Modifier::DIM),
+    ))];
+    let visible_height = visible_height.saturating_sub(1);
+    if visible_height == 0 {
+        frame.render_widget(Paragraph::new(lines), inner);
         return;
     }
     let scroll = selected_index
         .saturating_sub(visible_height.saturating_sub(1))
         .min(entities.len().saturating_sub(visible_height));
 
-    let mut lines = Vec::new();
     for (index, entity) in entities
         .iter()
         .enumerate()
@@ -165,8 +180,12 @@ fn render_watchlist(
         };
         let glyph = match app.sec_tab {
             SecTab::Institutional => {
-                let deltas = db::sec_repo::holding_deltas(connection, entity.id).unwrap_or_default();
-                if deltas.iter().any(|delta| delta.kind != HoldingDeltaKind::Unchanged) {
+                let deltas =
+                    db::sec_repo::holding_deltas(connection, entity.id).unwrap_or_default();
+                if deltas
+                    .iter()
+                    .any(|delta| delta.kind != HoldingDeltaKind::Unchanged)
+                {
                     Span::styled("▲ ", Style::default().fg(theme.positive))
                 } else {
                     Span::styled("• ", Style::default().fg(theme.muted))
@@ -214,7 +233,10 @@ fn render_watchlist(
                 base_style,
             ));
             if let Some(subtitle) = &entity.subtitle {
-                spans.push(Span::styled(subtitle.clone(), Style::default().fg(theme.muted)));
+                spans.push(Span::styled(
+                    subtitle.clone(),
+                    Style::default().fg(theme.muted),
+                ));
             }
         } else {
             spans.push(Span::styled(entity.name.clone(), base_style));
@@ -291,13 +313,17 @@ fn render_institution_detail(
             Span::styled("13F value ", Style::default().fg(theme.muted)),
             Span::styled(
                 format_currency(current_total),
-                Style::default().fg(theme.foreground).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.foreground)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw("  "),
             Span::styled("Positions ", Style::default().fg(theme.muted)),
             Span::styled(
                 holdings.len().to_string(),
-                Style::default().fg(theme.foreground).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.foreground)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw("  "),
             Span::styled("QoQ ", Style::default().fg(theme.muted)),
@@ -353,14 +379,7 @@ fn render_institution_detail(
         ]),
     ];
     frame.render_widget(
-        Paragraph::new(summary_lines)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" 13f summary ")
-                    .border_style(Style::default().fg(theme.muted)),
-            )
-            .wrap(Wrap { trim: true }),
+        Paragraph::new(summary_lines).wrap(Wrap { trim: true }),
         sections[1],
     );
 
@@ -369,15 +388,23 @@ fn render_institution_detail(
         let delta_text = delta
             .map(|value| match value.kind {
                 HoldingDeltaKind::New => "New".to_string(),
-                HoldingDeltaKind::Increased => format!("+{}", value.current_shares - value.previous_shares),
-                HoldingDeltaKind::Decreased => format!("{}", value.current_shares - value.previous_shares),
+                HoldingDeltaKind::Increased => {
+                    format!("+{}", value.current_shares - value.previous_shares)
+                }
+                HoldingDeltaKind::Decreased => {
+                    format!("{}", value.current_shares - value.previous_shares)
+                }
                 HoldingDeltaKind::Exited => "Exit".to_string(),
                 HoldingDeltaKind::Unchanged => "0".to_string(),
             })
             .unwrap_or_else(|| "0".to_string());
         let delta_style = match delta.map(|value| value.kind) {
-            Some(HoldingDeltaKind::New | HoldingDeltaKind::Increased) => Style::default().fg(theme.positive),
-            Some(HoldingDeltaKind::Decreased | HoldingDeltaKind::Exited) => Style::default().fg(NEGATIVE),
+            Some(HoldingDeltaKind::New | HoldingDeltaKind::Increased) => {
+                Style::default().fg(theme.positive)
+            }
+            Some(HoldingDeltaKind::Decreased | HoldingDeltaKind::Exited) => {
+                Style::default().fg(NEGATIVE)
+            }
             _ => Style::default().fg(theme.muted),
         };
         Row::new(vec![
@@ -399,15 +426,12 @@ fn render_institution_detail(
             Constraint::Length(12),
         ],
     )
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" latest holdings ")
-            .border_style(Style::default().fg(theme.muted)),
-    )
     .header(
-        Row::new(vec!["Ticker/Name", "Shares", "Value", "Delta", "% Port"])
-            .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Row::new(vec!["Ticker/Name", "Shares", "Value", "Delta", "% Port"]).style(
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
     )
     .column_spacing(1);
     frame.render_widget(table, sections[2]);
@@ -441,8 +465,16 @@ fn render_ceo_detail(
                 Cell::from(tx.transaction_date),
                 Cell::from(Line::from(Span::styled(tx.code, style))),
                 Cell::from(format_compact_number(tx.shares)),
-                Cell::from(tx.price_usd.map(format_currency).unwrap_or_else(|| "-".to_string())),
-                Cell::from(value.map(format_currency).unwrap_or_else(|| "-".to_string())),
+                Cell::from(
+                    tx.price_usd
+                        .map(format_currency)
+                        .unwrap_or_else(|| "-".to_string()),
+                ),
+                Cell::from(
+                    value
+                        .map(format_currency)
+                        .unwrap_or_else(|| "-".to_string()),
+                ),
                 Cell::from(
                     tx.shares_owned_after
                         .map(format_compact_number)
@@ -462,15 +494,20 @@ fn render_ceo_detail(
             Constraint::Length(16),
         ],
     )
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" recent form 4 transactions ")
-            .border_style(Style::default().fg(theme.muted)),
-    )
     .header(
-        Row::new(vec!["Date", "Type", "Shares", "Price", "Value", "Owned After"])
-            .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Row::new(vec![
+            "Date",
+            "Type",
+            "Shares",
+            "Price",
+            "Value",
+            "Owned After",
+        ])
+        .style(
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
     )
     .column_spacing(1);
     frame.render_widget(table, sections[1]);
@@ -499,12 +536,6 @@ fn render_congress_detail(
         frame.render_widget(
             Paragraph::new(message)
                 .style(Style::default().fg(theme.muted))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" disclosures ")
-                        .border_style(Style::default().fg(theme.muted)),
-                )
                 .wrap(Wrap { trim: true }),
             sections[1],
         );
@@ -540,15 +571,12 @@ fn render_congress_detail(
             Constraint::Length(10),
         ],
     )
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" disclosures ")
-            .border_style(Style::default().fg(theme.muted)),
-    )
     .header(
-        Row::new(vec!["Date", "Type", "Ticker", "Asset", "Amount", "Filed"])
-            .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Row::new(vec!["Date", "Type", "Ticker", "Asset", "Amount", "Filed"]).style(
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
     )
     .column_spacing(1);
     frame.render_widget(table, sections[1]);
@@ -567,11 +595,16 @@ fn render_detail_header(
         .flatten()
         .and_then(|value| parse_relative_time(&value))
         .unwrap_or_else(|| "never".to_string());
-    let subtitle = entity.subtitle.as_deref().unwrap_or(entity.filer_cik.as_str());
+    let subtitle = entity
+        .subtitle
+        .as_deref()
+        .unwrap_or(entity.filer_cik.as_str());
     let body = vec![
         Line::from(Span::styled(
             entity.name.as_str(),
-            Style::default().fg(theme.foreground).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.foreground)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
             Span::styled(subtitle, Style::default().fg(theme.muted)),
@@ -582,22 +615,16 @@ fn render_detail_header(
             ),
             Span::raw("  "),
             Span::styled(
-                if app.sec_loading { "refreshing" } else { "[r] refresh" },
+                if app.sec_loading {
+                    "refreshing"
+                } else {
+                    "[r] refresh"
+                },
                 Style::default().fg(theme.accent),
             ),
         ]),
     ];
-    frame.render_widget(
-        Paragraph::new(body)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" detail ")
-                    .border_style(Style::default().fg(theme.muted)),
-            )
-            .wrap(Wrap { trim: true }),
-        area,
-    );
+    frame.render_widget(Paragraph::new(body).wrap(Wrap { trim: true }), area);
 }
 
 fn parse_relative_time(value: &str) -> Option<String> {
@@ -617,8 +644,7 @@ fn parse_relative_time(value: &str) -> Option<String> {
 fn format_currency(value: f64) -> String {
     if value.abs() >= 1_000_000_000_000.0 {
         format!("${:.1}T", value / 1_000_000_000_000.0)
-    } else
-    if value.abs() >= 1_000_000_000.0 {
+    } else if value.abs() >= 1_000_000_000.0 {
         format!("${:.1}B", value / 1_000_000_000.0)
     } else if value.abs() >= 1_000_000.0 {
         format!("${:.1}M", value / 1_000_000.0)
@@ -693,8 +719,10 @@ fn summarize_holding_deltas(deltas: &[crate::sec::types::HoldingDelta]) -> Holdi
     }
 
     HoldingDeltaSummary {
-        top_add: top_add.map(|(label, value)| format!("{label} +{}", format_compact_number(value as f64))),
-        top_cut: top_cut.map(|(label, value)| format!("{label} {}", format_compact_number(value as f64))),
+        top_add: top_add
+            .map(|(label, value)| format!("{label} +{}", format_compact_number(value as f64))),
+        top_cut: top_cut
+            .map(|(label, value)| format!("{label} {}", format_compact_number(value as f64))),
         bought,
         sold,
     }

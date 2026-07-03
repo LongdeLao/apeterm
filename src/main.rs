@@ -3,6 +3,7 @@ use std::{error::Error, io};
 
 mod agent;
 mod app;
+mod backend;
 mod config;
 mod db;
 mod enrich;
@@ -15,6 +16,7 @@ mod pages;
 mod quotes;
 mod search;
 mod sec;
+mod spotlight;
 mod theme;
 mod ui;
 
@@ -53,6 +55,17 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let connection = db::open(&config.ticker_db_path)?;
     sec::ensure_seeded(&connection)?;
+
+    // Without this, a panic mid-frame leaves the terminal in raw mode and on
+    // the alternate screen, so the shell that regains control after the
+    // process exits renders garbled (missing borders, mixed-up cursor).
+    let default_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), Show, LeaveAlternateScreen);
+        default_panic_hook(panic_info);
+    }));
+
     let mut stdout = io::stdout();
     enable_raw_mode()?;
     execute!(
@@ -115,6 +128,7 @@ fn run_app(
             );
         }
         app.poll_live_details();
+        app.poll_backend_insight();
         app.poll_agent_response();
 
         terminal.draw(|frame| ui::render(frame, &app))?;

@@ -35,16 +35,25 @@ pub struct LlmResponse {
     pub content: String,
 }
 
-/// Role of an entry in the user-facing transcript.
+/// Role of an entry in the user-facing transcript. Tool activity is not shown
+/// as its own turn; a successful/failed tool run is folded into the following
+/// assistant message as a badge (see [`AgentMessage::badge`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentRole {
     User,
     Assistant,
-    Tool,
+}
+
+/// Small status marker rendered next to an assistant message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Badge {
+    Ok,
+    Failed,
 }
 
 #[derive(Debug, Clone)]
 pub struct AgentMessage {
     pub role: AgentRole,
     pub content: String,
+    pub badge: Option<Badge>,
 }

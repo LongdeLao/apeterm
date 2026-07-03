@@ -1,15 +1,17 @@
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
-    symbols,
     style::{Color, Modifier, Style},
+    symbols,
     text::{Line, Span},
-    widgets::{Axis, Block, Borders, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table, Wrap},
+    widgets::{Axis, Cell, Chart, Dataset, GraphType, Paragraph, Row, Table, Wrap},
+    Frame,
 };
+use std::collections::HashSet;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
     app::{App, InputTarget, Page, SearchAssetKind},
+    backend::{InsightArticle, InsightExplanationResponse},
     db,
     i18n::{Key, Locale},
     pages::fill::Fill,
@@ -28,7 +30,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),
+            Constraint::Length(4),
             Constraint::Min(3),
             Constraint::Length(1),
         ])
@@ -60,36 +62,20 @@ pub fn render(frame: &mut Frame, app: &App) {
             ),
         ]),
     ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" search ")
-            .border_style(Style::default().fg(search_border_color(
-                app.is_text_input_target(InputTarget::Search),
-                theme.muted,
-                theme.accent,
-            ))),
-    );
+    .style(background_style(theme));
     frame.render_widget(input, chunks[0]);
     if app.page == Page::Search && app.is_text_input_target(InputTarget::Search) {
         frame.set_cursor_position(Position::new(
             chunks[0]
                 .x
-                .saturating_add(9 + UnicodeWidthStr::width(app.search_query.as_str()) as u16),
-            chunks[0].y.saturating_add(1),
+                .saturating_add(8 + UnicodeWidthStr::width(app.search_query.as_str()) as u16),
+            chunks[0].y,
         ));
     }
 
     if let Some(message) = &app.search_message {
         frame.render_widget(
-            Paragraph::new(message.as_str())
-                .style(Style::default().fg(theme.muted))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" results ")
-                        .border_style(Style::default().fg(theme.muted)),
-                ),
+            Paragraph::new(message.as_str()).style(background_style(theme).fg(theme.muted)),
             chunks[1],
         );
     } else {
@@ -104,24 +90,16 @@ pub fn render_details(frame: &mut Frame, app: &App) {
         return;
     };
 
-    let background = theme
-        .background
-        .unwrap_or(ratatui::style::Color::Rgb(24, 24, 24));
-
     if let Some(background_fill) = theme.background {
         frame.render_widget(Fill::new(background_fill), area);
     }
 
-    frame.render_widget(
-        Block::default().style(Style::default().bg(background)),
-        area,
-    );
     let inner = area;
 
     if inner.width < 120 {
         let root = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Min(0), Constraint::Length(1)])
+            .constraints([Constraint::Length(2), Constraint::Min(0)])
             .split(inner);
         frame.render_widget(detail_header(details, theme), root[0]);
 
@@ -140,15 +118,18 @@ pub fn render_details(frame: &mut Frame, app: &App) {
         frame.render_widget(fundamentals_panel(details, app, theme), stacked[1]);
         render_chart_panel(frame, app, theme, stacked[2]);
         frame.render_widget(intel_panel(app, details.symbol.as_str(), theme), stacked[3]);
-        frame.render_widget(bottom_meta(details, theme), root[2]);
     } else {
         let columns = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(68), Constraint::Percentage(32)])
+            .constraints([
+                Constraint::Percentage(68),
+                Constraint::Length(2),
+                Constraint::Percentage(32),
+            ])
             .split(inner);
         let chart_column = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Min(12), Constraint::Length(1)])
+            .constraints([Constraint::Length(2), Constraint::Min(12)])
             .split(columns[0]);
         let sidebar = Layout::default()
             .direction(Direction::Vertical)
@@ -158,7 +139,7 @@ pub fn render_details(frame: &mut Frame, app: &App) {
                 Constraint::Length(10),
                 Constraint::Min(12),
             ])
-            .split(columns[1]);
+            .split(columns[2]);
 
         frame.render_widget(
             Paragraph::new(Line::from(vec![
@@ -173,14 +154,11 @@ pub fn render_details(frame: &mut Frame, app: &App) {
             chart_column[0],
         );
         render_chart_panel(frame, app, theme, chart_column[1]);
-        frame.render_widget(
-            detail_header(details, theme),
-            sidebar[0],
-        );
+        render_vertical_divider(frame, theme, columns[1]);
+        frame.render_widget(detail_header(details, theme), sidebar[0]);
         frame.render_widget(price_panel(app, theme), sidebar[1]);
         frame.render_widget(fundamentals_panel(details, app, theme), sidebar[2]);
         frame.render_widget(intel_panel(app, details.symbol.as_str(), theme), sidebar[3]);
-        frame.render_widget(bottom_meta(details, theme), chart_column[2]);
     }
 }
 
@@ -197,10 +175,7 @@ fn detail_header(
                 .fg(theme.foreground)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            details.name.clone(),
-            Style::default().fg(theme.foreground),
-        ),
+        Span::styled(details.name.clone(), Style::default().fg(theme.foreground)),
         Span::raw(" "),
         Span::styled(
             format!("{}   {}", exchange, currency),
@@ -208,7 +183,23 @@ fn detail_header(
         ),
     ]))
     .alignment(Alignment::Left)
-    .style(Style::default().bg(theme.background.unwrap_or_default()))
+    .style(background_style(theme))
+}
+
+fn render_vertical_divider(frame: &mut Frame, theme: crate::theme::Theme, area: Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let x = area.x + area.width / 2;
+    let divider = Rect::new(x, area.y, 1, area.height);
+    let lines = (0..area.height)
+        .map(|_| Line::from("│"))
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().fg(theme.muted).add_modifier(Modifier::DIM)),
+        divider,
+    );
 }
 
 fn price_panel(app: &App, theme: crate::theme::Theme) -> Paragraph<'_> {
@@ -236,25 +227,25 @@ fn price_panel(app: &App, theme: crate::theme::Theme) -> Paragraph<'_> {
             None => ("-".to_string(), theme.muted),
         };
         let rvol = relative_volume(live);
+        lines.push(Line::from(vec![Span::styled(
+            symbol,
+            Style::default()
+                .fg(theme.foreground)
+                .add_modifier(Modifier::BOLD),
+        )]));
+        lines.push(Line::from(vec![Span::styled(
+            price,
+            Style::default()
+                .fg(theme.foreground)
+                .add_modifier(Modifier::BOLD),
+        )]));
         lines.push(Line::from(vec![
             Span::styled(
-                symbol,
-                Style::default()
-                    .fg(theme.foreground)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled(
-                price,
-                Style::default()
-                    .fg(theme.foreground)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled(
-                if change_text.starts_with('-') { "▼ " } else { "▲ " },
+                if change_text.starts_with('-') {
+                    "▼ "
+                } else {
+                    "▲ "
+                },
                 Style::default().fg(change_color),
             ),
             Span::styled(change_text, Style::default().fg(change_color)),
@@ -301,7 +292,8 @@ fn price_panel(app: &App, theme: crate::theme::Theme) -> Paragraph<'_> {
             ),
             (
                 app.t(Key::DetailsLabelPreviousClose),
-                live.previous_close.map(|value| format!("${}", format_price(value))),
+                live.previous_close
+                    .map(|value| format!("${}", format_price(value))),
                 None,
             ),
             (
@@ -313,8 +305,12 @@ fn price_panel(app: &App, theme: crate::theme::Theme) -> Paragraph<'_> {
                 "Day Range",
                 Some(format!(
                     "${} - ${}",
-                    live.day_low.map(format_price).unwrap_or_else(|| "-".to_string()),
-                    live.day_high.map(format_price).unwrap_or_else(|| "-".to_string())
+                    live.day_low
+                        .map(format_price)
+                        .unwrap_or_else(|| "-".to_string()),
+                    live.day_high
+                        .map(format_price)
+                        .unwrap_or_else(|| "-".to_string())
                 )),
                 None,
             ),
@@ -361,14 +357,7 @@ fn price_panel(app: &App, theme: crate::theme::Theme) -> Paragraph<'_> {
         )));
     }
 
-    Paragraph::new(lines)
-        .style(Style::default().fg(theme.foreground).bg(theme.background.unwrap_or_default()))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" quote ")
-                .border_style(Style::default().fg(theme.muted)),
-        )
+    Paragraph::new(lines).style(background_style(theme).fg(theme.foreground))
 }
 
 fn fundamentals_panel(
@@ -400,22 +389,10 @@ fn fundamentals_panel(
             theme.muted,
         );
     }
-    Paragraph::new(lines)
-        .style(Style::default().fg(theme.foreground).bg(theme.background.unwrap_or_default()))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" metrics ")
-                .border_style(Style::default().fg(theme.muted)),
-        )
+    Paragraph::new(lines).style(background_style(theme).fg(theme.foreground))
 }
 
 fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default().bg(theme.background.unwrap_or_default()))
-        .border_style(Style::default().fg(theme.muted));
-
     let history = app
         .selected_live_details
         .as_ref()
@@ -431,25 +408,20 @@ fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, 
         frame.render_widget(
             Paragraph::new(message)
                 .alignment(Alignment::Center)
-                .style(Style::default().fg(theme.muted).bg(theme.background.unwrap_or_default()))
-                .block(block),
+                .style(background_style(theme).fg(theme.muted)),
             area,
         );
         return;
     }
 
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let chart_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(1)])
-        .split(inner);
-
     let first = history.first().expect("history length checked");
     let last = history.last().expect("history length checked");
     let x_min = first.ts as f64;
     let x_max = last.ts as f64;
-    let min = history.iter().map(|point| point.close).fold(f64::INFINITY, f64::min);
+    let min = history
+        .iter()
+        .map(|point| point.close)
+        .fold(f64::INFINITY, f64::min);
     let max = history
         .iter()
         .map(|point| point.close)
@@ -465,7 +437,7 @@ fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, 
     } else {
         theme.negative
     };
-    let marker = if chart_chunks[0].width < 60 {
+    let marker = if area.width < 60 {
         symbols::Marker::Dot
     } else {
         symbols::Marker::Braille
@@ -474,18 +446,30 @@ fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, 
         .iter()
         .map(|point| (point.ts as f64, point.close))
         .collect();
+    let previous_close_points = app
+        .selected_live_details
+        .as_ref()
+        .and_then(|live| live.previous_close)
+        .filter(|value| *value >= min - y_padding && *value <= max + y_padding)
+        .map(|value| vec![(x_min, value), (x_max, value)]);
     let dataset = Dataset::default()
         .marker(marker)
         .graph_type(GraphType::Line)
-        .style(
-            Style::default()
-                .fg(line_color)
-                .bg(theme.background.unwrap_or_default()),
-        )
+        .style(background_style(theme).fg(line_color))
         .data(&points);
+    let mut datasets = vec![dataset];
+    if let Some(reference_points) = &previous_close_points {
+        datasets.push(
+            Dataset::default()
+                .marker(symbols::Marker::Dot)
+                .graph_type(GraphType::Line)
+                .style(Style::default().fg(theme.muted).add_modifier(Modifier::DIM))
+                .data(reference_points),
+        );
+    }
 
-    let chart = Chart::new(vec![dataset])
-        .style(Style::default().bg(theme.background.unwrap_or_default()))
+    let chart = Chart::new(datasets)
+        .style(background_style(theme))
         .x_axis(
             Axis::default()
                 .style(Style::default().fg(theme.muted))
@@ -501,98 +485,36 @@ fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, 
                 .labels_alignment(Alignment::Right),
         );
 
-    frame.render_widget(chart, chart_chunks[0]);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!("low ${}", format_price(min)),
-                Style::default().fg(theme.muted),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format_ts_label(first.ts),
-                Style::default().fg(theme.muted),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format_ts_label(last.ts),
-                Style::default().fg(theme.muted),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format!("high ${}", format_price(max)),
-                Style::default().fg(theme.muted),
-            ),
-        ])),
-        chart_chunks[1],
-    );
+    frame.render_widget(chart, area);
 }
 
 fn intel_panel(app: &App, symbol: &str, theme: crate::theme::Theme) -> Paragraph<'static> {
     let mut lines = Vec::new();
-    lines.push(Line::from(vec![
-        Span::styled(
-            " Summary ",
-            Style::default()
-                .fg(theme.foreground)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("|", Style::default().fg(theme.muted)),
-        Span::styled(" News ", Style::default().fg(theme.muted)),
-        Span::styled("|", Style::default().fg(theme.muted)),
-        Span::styled(" Notes ", Style::default().fg(theme.muted)),
-    ]));
-    lines.push(Line::from(""));
+    push_section_header(&mut lines, "Company");
     lines.extend(structured_summary_lines(app));
+
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("News", Style::default().fg(theme.muted))));
+    push_section_header(&mut lines, "Market Context");
+    lines.extend(detail_market_context_lines(app, symbol));
+
+    lines.push(Line::from(""));
+    push_section_header(&mut lines, "Headlines");
     lines.extend(detail_news_lines(app, symbol));
+
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("Notes", Style::default().fg(theme.muted))));
+    push_section_header(&mut lines, "Notes");
     lines.extend(detail_note_lines(app, symbol));
 
     Paragraph::new(lines)
-        .style(Style::default().fg(theme.foreground).bg(theme.background.unwrap_or_default()))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" intel ")
-                .border_style(Style::default().fg(theme.muted)),
-        )
+        .style(background_style(theme).fg(theme.foreground))
         .wrap(Wrap { trim: false })
-}
-
-fn bottom_meta(
-    details: &crate::search::InstrumentDetails,
-    theme: crate::theme::Theme,
-) -> Paragraph<'_> {
-    Paragraph::new(Line::from(vec![
-        Span::styled(
-            details.exchange.as_deref().unwrap_or("-"),
-            Style::default().fg(theme.muted),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            details.currency.as_deref().unwrap_or("-"),
-            Style::default().fg(theme.muted),
-        ),
-    ]))
 }
 
 fn render_results(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" results ")
-        .border_style(Style::default().fg(search_border_color(
-            !app.is_text_input_target(InputTarget::Search),
-            theme.muted,
-            theme.accent,
-        )));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = area;
 
-    let visible_rows = inner.height.saturating_sub(2).max(1) as usize;
+    let visible_rows = inner.height.saturating_sub(1).max(1) as usize;
 
     if app.search_results.is_empty() {
         frame.render_widget(
@@ -686,10 +608,6 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn search_border_color(active: bool, muted: Color, accent: Color) -> Color {
-    if active { accent } else { muted }
-}
-
 fn filter_span(label: &str, active: bool, theme: crate::theme::Theme) -> Span<'static> {
     if active {
         Span::styled(
@@ -700,6 +618,13 @@ fn filter_span(label: &str, active: bool, theme: crate::theme::Theme) -> Span<'s
         )
     } else {
         Span::styled(format!(" {label} "), Style::default().fg(theme.muted))
+    }
+}
+
+fn background_style(theme: crate::theme::Theme) -> Style {
+    match theme.background {
+        Some(background) => Style::default().bg(background),
+        None => Style::default(),
     }
 }
 
@@ -730,10 +655,10 @@ fn structured_summary_lines(app: &App) -> Vec<Line<'static>> {
         "Business",
         Style::default().add_modifier(Modifier::BOLD),
     )));
-    lines.push(Line::from(
-        live_summary(live, &app.locale)
-            .unwrap_or_else(|| app.t(Key::DetailsStatusNoSummary).to_string()),
-    ));
+    lines
+        .push(Line::from(live_summary(live, &app.locale).unwrap_or_else(
+            || app.t(Key::DetailsStatusNoSummary).to_string(),
+        )));
 
     if let Some(headquarters) = format_headquarters(live) {
         lines.push(Line::from(""));
@@ -757,17 +682,135 @@ fn structured_summary_lines(app: &App) -> Vec<Line<'static>> {
 }
 
 fn detail_news_lines(app: &App, symbol: &str) -> Vec<Line<'static>> {
+    if let Some(lines) = backend_headline_lines(app, symbol) {
+        return lines;
+    }
+
+    let mut seen = HashSet::new();
     let items = app
         .news_items
         .iter()
         .filter(|item| item.symbols.iter().any(|candidate| candidate == symbol))
+        .filter(|item| seen.insert(normalize_headline_key(&item.title)))
         .take(3)
-        .map(|item| Line::from(format!("• {}", item.title)))
+        .flat_map(|item| {
+            vec![
+                Line::from(format!("• {}", item.title)),
+                Line::from(Span::styled("  local feed", Style::default().fg(crate::theme::current_theme(app.theme_name).muted))),
+            ]
+        })
         .collect::<Vec<_>>();
     if items.is_empty() {
         vec![Line::from("No related headlines loaded")]
     } else {
         items
+    }
+}
+
+fn detail_market_context_lines(app: &App, symbol: &str) -> Vec<Line<'static>> {
+    if app.backend_insight_loading {
+        return vec![Line::from("Loading backend insight...")];
+    }
+
+    if let Some(status) = &app.backend_insight_status {
+        return vec![Line::from(format!(
+            "Backend unavailable: {}",
+            status
+        ))];
+    }
+
+    let Some(insight) = app.backend_insight.as_ref() else {
+        return vec![Line::from("No backend market context loaded")];
+    };
+    if insight.ticker != symbol {
+        return vec![Line::from("No backend market context loaded")];
+    }
+
+    let mut lines = Vec::new();
+    if let Some(explanation) = &insight.explanation {
+        lines.extend(backend_market_summary_lines(explanation));
+    }
+
+    if lines.is_empty() {
+        lines.push(Line::from("No backend market context loaded"));
+    }
+    lines
+}
+
+fn backend_headline_lines(app: &App, symbol: &str) -> Option<Vec<Line<'static>>> {
+    let insight = app.backend_insight.as_ref()?;
+    if insight.ticker != symbol {
+        return None;
+    }
+
+    let mut lines = Vec::new();
+    if let Some(context) = &insight.context {
+        if context.stale_context || context.articles.is_empty() {
+            lines.push(Line::from("No fresh backend articles in the current window"));
+            return Some(lines);
+        }
+
+        let mut seen = HashSet::new();
+        for article in context
+            .articles
+            .iter()
+            .filter(|article| seen.insert(normalize_headline_key(&article.title)))
+            .take(3)
+        {
+            lines.push(Line::from(format!("• {}", article.title)));
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "  {} | {}",
+                    backend_source_label(article),
+                    backend_age_label(article)
+                ),
+                Style::default().fg(crate::theme::current_theme(app.theme_name).muted),
+            )));
+        }
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines)
+    }
+}
+
+fn backend_market_summary_lines(explanation: &InsightExplanationResponse) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    if !explanation.summary.trim().is_empty() {
+        lines.push(Line::from(explanation.summary.clone()));
+    }
+    if explanation.stale_context {
+        lines.push(Line::from("Backend marked this context as stale"));
+    } else {
+        lines.push(Line::from(format!(
+            "Confidence: {}{}",
+            explanation.confidence,
+            if explanation.cache_hit { " | cache" } else { "" }
+        )));
+    }
+    for driver in explanation.key_drivers.iter().take(2) {
+        lines.push(Line::from(format!("• {}", driver)));
+    }
+    lines
+}
+
+fn backend_source_label(article: &InsightArticle) -> String {
+    if article.source.trim().is_empty() {
+        "source?".to_string()
+    } else {
+        article.source.clone()
+    }
+}
+
+fn backend_age_label(article: &InsightArticle) -> String {
+    if let Some(age_hours) = article.age_hours {
+        format!("{age_hours:.0}h")
+    } else if let Some(published_at) = &article.published_at {
+        published_at.clone()
+    } else {
+        "fresh".to_string()
     }
 }
 
@@ -796,6 +839,24 @@ fn detail_note_lines(app: &App, symbol: &str) -> Vec<Line<'static>> {
     }
 }
 
+fn push_section_header(lines: &mut Vec<Line<'static>>, title: &str) {
+    lines.push(Line::from(Span::styled(
+        title.to_string(),
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+}
+
+fn normalize_headline_key(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|character| character.to_lowercase())
+        .filter(|character| character.is_ascii_alphanumeric() || character.is_ascii_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn compact_fundamental_rows<'a>(
     details: &'a crate::search::InstrumentDetails,
     live: &'a LiveInstrumentDetails,
@@ -810,7 +871,10 @@ fn compact_fundamental_rows<'a>(
             app.t(Key::DetailsLabelAvgVolume),
             live.avg_volume.map(format_large_number),
         ),
-        (app.t(Key::DetailsLabelPeRatio), live.trailing_pe.map(format_ratio)),
+        (
+            app.t(Key::DetailsLabelPeRatio),
+            live.trailing_pe.map(format_ratio),
+        ),
         (
             app.t(Key::DetailsLabelDividendYield),
             live.dividend_yield.map(format_percent),
@@ -828,7 +892,10 @@ fn compact_loading_rows(app: &App) -> Vec<(&str, Option<String>)> {
         (app.t(Key::DetailsLabelMarketCap), Some("...".to_string())),
         (app.t(Key::DetailsLabelAvgVolume), Some("...".to_string())),
         (app.t(Key::DetailsLabelPeRatio), Some("...".to_string())),
-        (app.t(Key::DetailsLabelDividendYield), Some("...".to_string())),
+        (
+            app.t(Key::DetailsLabelDividendYield),
+            Some("...".to_string()),
+        ),
         (app.t(Key::DetailsLabelBeta), Some("...".to_string())),
         (app.t(Key::DetailsLabelCountry), Some("...".to_string())),
         (app.t(Key::DetailsLabelSector), Some("...".to_string())),
@@ -848,8 +915,14 @@ fn compact_profile_rows<'a>(
         (app.t(Key::DetailsLabelExchange), details.exchange.clone()),
         (app.t(Key::DetailsLabelCurrency), details.currency.clone()),
         (app.t(Key::DetailsLabelType), details.asset_type.clone()),
-        (app.t(Key::DetailsLabelActive), Some(details.active.to_string())),
-        (app.t(Key::DetailsLabelUpdated), details.last_updated.clone()),
+        (
+            app.t(Key::DetailsLabelActive),
+            Some(details.active.to_string()),
+        ),
+        (
+            app.t(Key::DetailsLabelUpdated),
+            details.last_updated.clone(),
+        ),
     ]
 }
 

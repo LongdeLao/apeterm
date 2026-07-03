@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -12,7 +12,7 @@ use crate::{
     db::notes_repo::NoteRow,
     i18n::Key,
     pages::panel,
-    theme::{Theme, current_theme},
+    theme::{current_theme, Theme},
 };
 
 const PIN_COL_WIDTH: u16 = 2;
@@ -43,14 +43,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     let selected = rows.get(app.notes_selection.min(rows.len().saturating_sub(1)));
 
     if rows.is_empty() {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" notes ")
-            .border_style(Style::default().fg(theme.muted));
         frame.render_widget(
             Paragraph::new(app.t(Key::NotesEmpty))
                 .style(Style::default().fg(theme.muted))
-                .block(block)
                 .wrap(Wrap { trim: true }),
             chunks[2],
         );
@@ -116,13 +111,7 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_notes_list(frame: &mut Frame, app: &App, area: Rect, rows: &[NoteRow]) {
-    let theme = current_theme(app.theme_name);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" notes ")
-        .border_style(Style::default().fg(theme.muted));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = area;
 
     if inner.height == 0 {
         return;
@@ -168,7 +157,11 @@ fn render_note_row(app: &App, note: &NoteRow, selected: bool, width: u16) -> Row
     };
 
     let updated = app.news_timestamp(chrono::DateTime::from_timestamp(note.updated_at, 0));
-    let ticker = note.tickers.first().cloned().unwrap_or_else(|| "—".to_string());
+    let ticker = note
+        .tickers
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "—".to_string());
     let ticker_style = if note.tickers.is_empty() {
         Style::default().fg(theme.muted)
     } else {
@@ -261,21 +254,28 @@ fn render_document(frame: &mut Frame, app: &App, area: Rect, row: Option<&NoteRo
     let header_rows = lines.len() as u16;
     let body_width = inset.width.max(1) as usize;
     let wrapped = wrap_text(body, body_width);
-    lines.extend(
-        wrapped
-            .iter()
-            .map(|line| Line::from(Span::styled(line.clone(), Style::default().fg(theme.foreground)))),
-    );
+    lines.extend(wrapped.iter().map(|line| {
+        Line::from(Span::styled(
+            line.clone(),
+            Style::default().fg(theme.foreground),
+        ))
+    }));
 
     frame.render_widget(Paragraph::new(lines), inset);
 
-    let insert_active = app.notes_insert_mode && is_draft && app.is_text_input_target(InputTarget::Notes);
+    let insert_active =
+        app.notes_insert_mode && is_draft && app.is_text_input_target(InputTarget::Notes);
     if insert_active {
         let last_line = wrapped.last().map(String::as_str).unwrap_or("");
         let cursor_row = header_rows + wrapped.len().saturating_sub(1) as u16;
         frame.set_cursor_position(Position::new(
-            inset.x.saturating_add(UnicodeWidthStr::width(last_line) as u16),
-            inset.y.saturating_add(cursor_row).min(inset.y + inset.height.saturating_sub(1)),
+            inset
+                .x
+                .saturating_add(UnicodeWidthStr::width(last_line) as u16),
+            inset
+                .y
+                .saturating_add(cursor_row)
+                .min(inset.y + inset.height.saturating_sub(1)),
         ));
     }
 
@@ -327,7 +327,10 @@ fn render_suggestions(frame: &mut Frame, app: &App, inset: Rect, offset_row: u16
     let count = app.notes_suggestions.len().min(6) as u16;
     let area = Rect {
         x: inset.x,
-        y: inset.y.saturating_add(offset_row).min(inset.y + inset.height.saturating_sub(count.max(1))),
+        y: inset
+            .y
+            .saturating_add(offset_row)
+            .min(inset.y + inset.height.saturating_sub(count.max(1))),
         width: inset.width.min(40),
         height: count.min(inset.height),
     };

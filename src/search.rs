@@ -171,6 +171,33 @@ pub fn live_details(symbol: &str) -> Option<LiveInstrumentDetails> {
     serde_json::from_slice(&output.stdout).ok()
 }
 
+/// Fast, indexed prefix lookup over `instruments` directly (no FTS5 join),
+/// used by Spotlight where keystroke-to-keystroke latency matters more than
+/// full-text ranking. Falls back to `popular()` for an empty query.
+pub fn spotlight_prefix_search(
+    connection: &Connection,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchResult>> {
+    let query = query.trim();
+    if query.is_empty() {
+        return popular(connection, "stock", limit);
+    }
+
+    let mut statement = connection.prepare(
+        "
+        SELECT symbol, name, sector, industry, exchange, asset_type, 0.0 as rank
+        FROM instruments
+        WHERE active = 1 AND (symbol LIKE ?1 || '%' OR name LIKE ?1 || '%')
+        ORDER BY (symbol LIKE ?1 || '%') DESC, symbol ASC
+        LIMIT ?2
+        ",
+    )?;
+    rows_to_search_results(
+        statement.query_map(params![query, limit as i64], read_search_result)?,
+    )
+}
+
 fn popular(connection: &Connection, asset_type: &str, limit: usize) -> Result<Vec<SearchResult>> {
     let mut statement = connection.prepare(
         "

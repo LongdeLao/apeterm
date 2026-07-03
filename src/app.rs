@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agent::AgentController,
+    backend::BackendInsight,
     config::{AppConfig, NamedWatchlist},
     db,
     i18n::{I18n, Key, Locale},
@@ -217,6 +218,18 @@ enum SecEvent {
     Error(String),
 }
 
+#[derive(Debug)]
+enum BackendInsightEvent {
+    Loaded {
+        symbol: String,
+        insight: Option<BackendInsight>,
+    },
+    Error {
+        symbol: String,
+        message: String,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub enum NewsListRow {
     Group {
@@ -258,6 +271,10 @@ pub struct App {
     pub selected_live_details: Option<LiveInstrumentDetails>,
     pub live_details_loading: bool,
     live_details_receiver: Option<Receiver<Option<LiveInstrumentDetails>>>,
+    pub backend_insight: Option<BackendInsight>,
+    pub backend_insight_loading: bool,
+    pub backend_insight_status: Option<String>,
+    backend_insight_receiver: Option<Receiver<BackendInsightEvent>>,
     pub search_message: Option<String>,
     pub settings_selection: usize,
     pub reset_confirmation: Option<TextInput>,
@@ -298,6 +315,7 @@ pub struct App {
     last_sec_refresh: Option<Instant>,
     financial_juice_cooldown_until: Option<Instant>,
     pub agent: AgentController,
+    pub spotlight: crate::spotlight::SpotlightState,
     news_receiver: Option<Receiver<NewsEvent>>,
     config: AppConfig,
 }
@@ -347,6 +365,10 @@ impl App {
             selected_live_details: None,
             live_details_loading: false,
             live_details_receiver: None,
+            backend_insight: None,
+            backend_insight_loading: false,
+            backend_insight_status: None,
+            backend_insight_receiver: None,
             search_message: None,
             settings_selection: 0,
             reset_confirmation: None,
@@ -387,6 +409,7 @@ impl App {
             last_sec_refresh: None,
             financial_juice_cooldown_until: None,
             agent: AgentController::new(&config.llm),
+            spotlight: crate::spotlight::SpotlightState::default(),
             news_receiver: None,
             config,
         }
@@ -527,6 +550,10 @@ impl App {
             self.selected_live_details = None;
             self.live_details_loading = false;
             self.live_details_receiver = None;
+            self.backend_insight = None;
+            self.backend_insight_loading = false;
+            self.backend_insight_status = None;
+            self.backend_insight_receiver = None;
         } else if self.page == Page::Search {
             self.mode = AppMode::Normal;
             self.page = Page::Dashboard;
@@ -709,6 +736,78 @@ impl App {
 
     pub fn agent_panel_open(&self) -> bool {
         self.agent.panel_open
+    }
+
+    pub fn cycle_theme(&mut self) {
+        self.set_theme(self.theme_name.next());
+    }
+
+    pub fn open_spotlight(&mut self) {
+        self.spotlight.open = true;
+        self.spotlight.query.clear();
+        self.spotlight.selection = 0;
+        crate::spotlight::refresh(self);
+    }
+
+    pub fn close_spotlight(&mut self) {
+        self.spotlight.open = false;
+        self.spotlight.query.clear();
+        self.spotlight.selection = 0;
+        self.spotlight.results.clear();
+    }
+
+    pub fn spotlight_push_char(&mut self, character: char) {
+        if character.is_control() {
+            return;
+        }
+        self.spotlight.query.push(character);
+        crate::spotlight::refresh(self);
+    }
+
+    pub fn spotlight_pop_char(&mut self) {
+        self.spotlight.query.pop();
+        crate::spotlight::refresh(self);
+    }
+
+    pub fn spotlight_move_selection(&mut self, direction: SelectionDirection) {
+        let count = self.spotlight.results.len();
+        if count == 0 {
+            return;
+        }
+        self.spotlight.selection = match direction {
+            SelectionDirection::Previous => {
+                (self.spotlight.selection + count - 1) % count
+            }
+            SelectionDirection::Next => (self.spotlight.selection + 1) % count,
+        };
+    }
+
+    pub fn execute_spotlight_selection(&mut self) {
+        let Some(result) = self.spotlight.results.get(self.spotlight.selection).cloned() else {
+            self.close_spotlight();
+            return;
+        };
+        self.close_spotlight();
+
+        match result.entry {
+            crate::spotlight::SpotlightEntry::Symbol(symbol) => {
+                let _ = self.agent_open_symbol(&symbol);
+            }
+            crate::spotlight::SpotlightEntry::Panel(panel) => panel.apply(self),
+            crate::spotlight::SpotlightEntry::Action(index) => {
+                if let Some(action) = crate::spotlight::actions().get(index) {
+                    (action.run)(self);
+                }
+            }
+        }
+    }
+
+    /// Focuses (re-opening if closed) the given panel slot and switches it
+    /// to the requested content, as used by Spotlight panel jumps.
+    pub fn spotlight_focus_panel(&mut self, panel_id: PanelId, window_kind: WindowKind) {
+        self.page = Page::Dashboard;
+        self.open_panel(panel_id);
+        self.set_panel_content(panel_id, window_kind);
     }
 
     pub fn begin_text_input(&mut self, target: InputTarget) {
@@ -906,18 +1005,24 @@ impl App {
         let Some(result) = self.search_results.get(self.search_selection) else {
             return;
         };
+        let symbol = result.symbol.clone();
 
         match crate::db::open(&self.ticker_db_path)
-            .and_then(|connection| search::details(&connection, &result.symbol))
+            .and_then(|connection| search::details(&connection, &symbol))
         {
             Ok(details) => {
                 self.selected_details = details;
                 self.selected_live_details = None;
                 self.live_details_receiver = None;
                 self.live_details_loading = false;
+                self.backend_insight = None;
+                self.backend_insight_loading = false;
+                self.backend_insight_status = None;
+                self.backend_insight_receiver = None;
                 self.page = Page::Details;
                 self.search_message = None;
-                self.spawn_live_details_fetch(result.symbol.clone());
+                self.spawn_live_details_fetch(symbol.clone());
+                self.spawn_backend_insight_fetch(symbol);
             }
             Err(error) => {
                 self.search_message = Some(
@@ -946,6 +1051,45 @@ impl App {
         }
     }
 
+    pub fn poll_backend_insight(&mut self) {
+        let Some(receiver) = &self.backend_insight_receiver else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(BackendInsightEvent::Loaded { symbol, insight }) => {
+                let is_current = self
+                    .selected_details
+                    .as_ref()
+                    .map(|details| details.symbol == symbol)
+                    .unwrap_or(false);
+                if is_current {
+                    self.backend_insight = insight;
+                    self.backend_insight_status = None;
+                }
+                self.backend_insight_loading = false;
+                self.backend_insight_receiver = None;
+            }
+            Ok(BackendInsightEvent::Error { symbol, message }) => {
+                let is_current = self
+                    .selected_details
+                    .as_ref()
+                    .map(|details| details.symbol == symbol)
+                    .unwrap_or(false);
+                if is_current {
+                    self.backend_insight = None;
+                    self.backend_insight_status = Some(message);
+                }
+                self.backend_insight_loading = false;
+                self.backend_insight_receiver = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.backend_insight_loading = false;
+                self.backend_insight_receiver = None;
+            }
+        }
+    }
+
     fn spawn_live_details_fetch(&mut self, symbol: String) {
         let (sender, receiver) = mpsc::channel();
         self.live_details_receiver = Some(receiver);
@@ -953,6 +1097,24 @@ impl App {
         thread::spawn(move || {
             let details = search::live_details(&symbol);
             let _ = sender.send(details);
+        });
+    }
+
+    fn spawn_backend_insight_fetch(&mut self, symbol: String) {
+        let backend_config = self.config.backend.clone();
+        let (sender, receiver) = mpsc::channel();
+        self.backend_insight = None;
+        self.backend_insight_status = None;
+        self.backend_insight_receiver = Some(receiver);
+        self.backend_insight_loading = true;
+        thread::spawn(move || {
+            let event = match crate::backend::BackendClient::new(&backend_config)
+                .and_then(|client| client.fetch_insight(&symbol))
+            {
+                Ok(insight) => BackendInsightEvent::Loaded { symbol, insight },
+                Err(message) => BackendInsightEvent::Error { symbol, message },
+            };
+            let _ = sender.send(event);
         });
     }
 

@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 use crate::{
@@ -214,9 +214,7 @@ fn row_widths(area: Rect, split: u16, left_open: bool, right_open: bool) -> (u16
 
 fn render_dividers(frame: &mut Frame, app: &App, geometry: &DashboardGeometry) {
     let theme = current_theme(app.theme_name);
-    let divider_style = Style::default()
-        .fg(theme.accent)
-        .add_modifier(Modifier::DIM);
+    let divider_style = Style::default().fg(theme.muted).add_modifier(Modifier::DIM);
 
     for divider in &geometry.dividers {
         let widget = match divider.glyph {

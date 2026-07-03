@@ -13,13 +13,27 @@ pub fn handle_event(app: &mut App, event: Event) {
 }
 
 fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
+    let is_control = modifiers.contains(KeyModifiers::CONTROL);
+
+    if key_code == KeyCode::Char('p') && is_control {
+        if app.spotlight.open {
+            app.close_spotlight();
+        } else {
+            app.open_spotlight();
+        }
+        return;
+    }
+
+    if app.spotlight.open {
+        handle_spotlight_key(app, key_code, modifiers);
+        return;
+    }
+
     if let AppMode::TextInput(target) = app.mode {
         if handle_text_input_key(app, target, key_code, modifiers) {
             return;
         }
     }
-
-    let is_control = modifiers.contains(KeyModifiers::CONTROL);
 
     if key_code == KeyCode::Char('a') && !is_control && can_open_agent(app) {
         app.open_agent();
@@ -81,6 +95,19 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
 
 fn can_open_agent(app: &App) -> bool {
     !app.is_text_input_active()
+}
+
+fn handle_spotlight_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
+    let is_control = modifiers.contains(KeyModifiers::CONTROL);
+    match key_code {
+        KeyCode::Esc => app.close_spotlight(),
+        KeyCode::Up => app.spotlight_move_selection(SelectionDirection::Previous),
+        KeyCode::Down => app.spotlight_move_selection(SelectionDirection::Next),
+        KeyCode::Enter => app.execute_spotlight_selection(),
+        KeyCode::Backspace => app.spotlight_pop_char(),
+        KeyCode::Char(character) if !is_control => app.spotlight_push_char(character),
+        _ => {}
+    }
 }
 
 fn handle_onboarding_key(app: &mut App, key_code: KeyCode) {

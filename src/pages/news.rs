@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -40,14 +40,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
 
     let rows = app.news_visible_rows();
     if rows.is_empty() {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" headlines ")
-            .border_style(Style::default().fg(theme.muted));
         frame.render_widget(
             Paragraph::new(app.news_empty_message())
                 .style(Style::default().fg(theme.muted))
-                .block(block)
                 .wrap(Wrap { trim: true }),
             chunks[2],
         );
@@ -116,13 +111,7 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_news_list(frame: &mut Frame, app: &App, area: Rect, rows: &[NewsListRow]) {
-    let theme = current_theme(app.theme_name);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" headlines ")
-        .border_style(Style::default().fg(theme.muted));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = area;
 
     if inner.height == 0 {
         return;
@@ -336,12 +325,12 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect, item: &NewsItem) {
 
 fn render_side_detail(frame: &mut Frame, app: &App, area: Rect, item: Option<&NewsItem>) {
     let theme = current_theme(app.theme_name);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" detail ")
-        .border_style(Style::default().fg(theme.muted));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = Rect {
+        x: area.x.saturating_add(1),
+        y: area.y,
+        width: area.width.saturating_sub(1),
+        height: area.height,
+    };
 
     let lines = if let Some(item) = item {
         let published = app.news_absolute_timestamp(item.published_at);

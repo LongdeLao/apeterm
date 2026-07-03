@@ -7,4 +7,4 @@ pub mod tool_call;
 pub mod tools;
 
 pub use controller::AgentController;
-pub use messages::AgentRole;
+pub use messages::{AgentRole, Badge};
