@@ -26,7 +26,6 @@ impl ToolCall {
             ToolCall::OpenSymbol { .. } => "open_symbol",
         }
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -77,7 +76,9 @@ pub enum AssistantAction {
     },
     /// Well-formed JSON that requested an unknown tool or omitted required
     /// args; reported back to the model so it can correct itself.
-    Invalid { reason: String },
+    Invalid {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]

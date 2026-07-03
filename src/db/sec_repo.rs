@@ -6,7 +6,10 @@ use crate::sec::types::{
     CongressTx, EntityKind, HoldingDelta, HoldingDeltaKind, HoldingRow, InsiderTx, SecEntity,
 };
 
-pub fn list_entities(connection: &Connection, kind: EntityKind) -> rusqlite::Result<Vec<SecEntity>> {
+pub fn list_entities(
+    connection: &Connection,
+    kind: EntityKind,
+) -> rusqlite::Result<Vec<SecEntity>> {
     let mut statement = connection.prepare(
         "
         SELECT id, kind, name, filer_cik, issuer_ticker, subtitle
@@ -76,7 +79,10 @@ pub fn get_entity(connection: &Connection, entity_id: i64) -> rusqlite::Result<O
         .optional()
 }
 
-pub fn latest_holdings(connection: &Connection, entity_id: i64) -> rusqlite::Result<Vec<HoldingRow>> {
+pub fn latest_holdings(
+    connection: &Connection,
+    entity_id: i64,
+) -> rusqlite::Result<Vec<HoldingRow>> {
     let period = latest_period(connection, entity_id)?;
     let Some(period) = period else {
         return Ok(Vec::new());
@@ -101,7 +107,10 @@ pub fn latest_holdings(connection: &Connection, entity_id: i64) -> rusqlite::Res
     rows.collect()
 }
 
-pub fn holding_deltas(connection: &Connection, entity_id: i64) -> rusqlite::Result<Vec<HoldingDelta>> {
+pub fn holding_deltas(
+    connection: &Connection,
+    entity_id: i64,
+) -> rusqlite::Result<Vec<HoldingDelta>> {
     let periods = latest_two_periods(connection, entity_id)?;
     let Some(current_period) = periods.first() else {
         return Ok(Vec::new());
@@ -237,7 +246,10 @@ pub fn recent_congress_txs(
     rows.collect()
 }
 
-pub fn last_accession_seen(connection: &Connection, entity_id: i64) -> rusqlite::Result<Option<String>> {
+pub fn last_accession_seen(
+    connection: &Connection,
+    entity_id: i64,
+) -> rusqlite::Result<Option<String>> {
     connection
         .query_row(
             "SELECT last_accession_seen FROM sec_sync_state WHERE entity_id = ?1",

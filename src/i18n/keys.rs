@@ -110,6 +110,22 @@ pub enum Key {
     AgentStatusEmpty,
     #[strum(serialize = "agent.status.loading")]
     AgentStatusLoading,
+    #[strum(serialize = "copy.no_data")]
+    CopyNoData,
+    #[strum(serialize = "copy.empty_watchlist")]
+    CopyEmptyWatchlist,
+    #[strum(serialize = "copy.loading")]
+    CopyLoading,
+    #[strum(serialize = "copy.error")]
+    CopyError,
+    #[strum(serialize = "copy.success")]
+    CopySuccess,
+    #[strum(serialize = "copy.agent_placeholder")]
+    CopyAgentPlaceholder,
+    #[strum(serialize = "copy.search_placeholder")]
+    CopySearchPlaceholder,
+    #[strum(serialize = "copy.disclaimer")]
+    CopyDisclaimer,
     #[strum(serialize = "watchlist.market.pre_market")]
     WatchlistMarketPreMarket,
     #[strum(serialize = "watchlist.market.regular")]
@@ -180,6 +196,10 @@ pub enum Key {
     SearchHelpTabSwitches,
     #[strum(serialize = "search.footer")]
     SearchFooter,
+    #[strum(serialize = "details.footer")]
+    DetailsFooter,
+    #[strum(serialize = "details.footer.compact")]
+    DetailsFooterCompact,
     #[strum(serialize = "spotlight.title")]
     SpotlightTitle,
     #[strum(serialize = "spotlight.footer")]
@@ -256,6 +276,124 @@ pub enum Key {
     DetailsLabelUpdated,
     #[strum(serialize = "details.value.days")]
     DetailsValueDays,
+    #[strum(serialize = "details.chart.title")]
+    DetailsChartTitle,
+    #[strum(serialize = "details.chart.no_data")]
+    DetailsChartNoData,
+    #[strum(serialize = "details.chart.high")]
+    DetailsChartHigh,
+    #[strum(serialize = "details.chart.low")]
+    DetailsChartLow,
+    #[strum(serialize = "details.timeframe.1d")]
+    DetailsTimeframeOneDay,
+    #[strum(serialize = "details.timeframe.1w")]
+    DetailsTimeframeOneWeek,
+    #[strum(serialize = "details.timeframe.1m")]
+    DetailsTimeframeOneMonth,
+    #[strum(serialize = "details.timeframe.3m")]
+    DetailsTimeframeThreeMonths,
+    #[strum(serialize = "details.timeframe.6m")]
+    DetailsTimeframeSixMonths,
+    #[strum(serialize = "details.timeframe.1y")]
+    DetailsTimeframeOneYear,
+    #[strum(serialize = "details.timeframe.5y")]
+    DetailsTimeframeFiveYears,
+    #[strum(serialize = "details.timeframe.max")]
+    DetailsTimeframeMax,
+    #[strum(serialize = "details.label.volume")]
+    DetailsLabelVolume,
+    #[strum(serialize = "details.label.rvol")]
+    DetailsLabelRvol,
+    #[strum(serialize = "details.label.day_range")]
+    DetailsLabelDayRange,
+    #[strum(serialize = "details.label.headquarters")]
+    DetailsLabelHeadquarters,
+    #[strum(serialize = "details.label.employees")]
+    DetailsLabelEmployees,
+    #[strum(serialize = "details.label.after_hours")]
+    DetailsLabelAfterHours,
+    #[strum(serialize = "details.section.key_stats")]
+    DetailsSectionKeyStats,
+    #[strum(serialize = "details.section.company")]
+    DetailsSectionCompany,
+    #[strum(serialize = "details.section.profile")]
+    DetailsSectionProfile,
+    #[strum(serialize = "details.section.market_context")]
+    DetailsSectionMarketContext,
+    #[strum(serialize = "details.section.headlines")]
+    DetailsSectionHeadlines,
+    #[strum(serialize = "details.section.notes")]
+    DetailsSectionNotes,
+    #[strum(serialize = "details.description.expand")]
+    DetailsDescriptionExpand,
+    #[strum(serialize = "details.description.collapse")]
+    DetailsDescriptionCollapse,
+    #[strum(serialize = "details.context.expand")]
+    DetailsContextExpand,
+    #[strum(serialize = "details.context.loading")]
+    DetailsContextLoading,
+    #[strum(serialize = "details.context.backend_unavailable")]
+    DetailsContextBackendUnavailable,
+    #[strum(serialize = "details.context.empty")]
+    DetailsContextEmpty,
+    #[strum(serialize = "details.context.stale")]
+    DetailsContextStale,
+    #[strum(serialize = "details.context.confidence")]
+    DetailsContextConfidence,
+    #[strum(serialize = "details.context.cache")]
+    DetailsContextCache,
+    #[strum(serialize = "details.headlines.empty")]
+    DetailsHeadlinesEmpty,
+    #[strum(serialize = "details.headlines.no_fresh")]
+    DetailsHeadlinesNoFresh,
+    #[strum(serialize = "details.headlines.local_feed")]
+    DetailsHeadlinesLocalFeed,
+    #[strum(serialize = "details.headlines.source_unknown")]
+    DetailsHeadlinesSourceUnknown,
+    #[strum(serialize = "details.headlines.fresh")]
+    DetailsHeadlinesFresh,
+    #[strum(serialize = "details.notes.empty")]
+    DetailsNotesEmpty,
+    #[strum(serialize = "details.notes.unavailable")]
+    DetailsNotesUnavailable,
+    #[strum(serialize = "details.notes.empty_note")]
+    DetailsNotesEmptyNote,
+    #[strum(serialize = "metric.explanation.pe_ratio")]
+    MetricExplanationPeRatio,
+    #[strum(serialize = "metric.explanation.forward_pe")]
+    MetricExplanationForwardPe,
+    #[strum(serialize = "metric.explanation.market_cap")]
+    MetricExplanationMarketCap,
+    #[strum(serialize = "metric.explanation.revenue_growth")]
+    MetricExplanationRevenueGrowth,
+    #[strum(serialize = "metric.explanation.profit_margin")]
+    MetricExplanationProfitMargin,
+    #[strum(serialize = "metric.explanation.gross_margin")]
+    MetricExplanationGrossMargin,
+    #[strum(serialize = "metric.explanation.operating_margin")]
+    MetricExplanationOperatingMargin,
+    #[strum(serialize = "metric.explanation.net_margin")]
+    MetricExplanationNetMargin,
+    #[strum(serialize = "metric.explanation.roe")]
+    MetricExplanationRoe,
+    #[strum(serialize = "metric.explanation.roic")]
+    MetricExplanationRoic,
+    #[strum(serialize = "metric.explanation.debt_equity")]
+    MetricExplanationDebtEquity,
+    #[strum(serialize = "metric.explanation.ev_ebitda")]
+    MetricExplanationEvEbitda,
+    #[strum(serialize = "metric.explanation.beta")]
+    MetricExplanationBeta,
+    #[strum(serialize = "metric.explanation.volume")]
+    MetricExplanationVolume,
+    #[strum(serialize = "metric.explanation.dividend_yield")]
+    MetricExplanationDividendYield,
+    #[strum(serialize = "metric.explanation.avg_volume")]
+    MetricExplanationAvgVolume,
+    #[strum(serialize = "metric.explanation.relative_volume")]
+    MetricExplanationRelativeVolume,
+    #[strum(serialize = "metric.explanation.previous_close")]
+    MetricExplanationPreviousClose,
     #[strum(serialize = "settings.title")]
     SettingsTitle,
     #[strum(serialize = "settings.footer")]
@@ -264,6 +402,20 @@ pub enum Key {
     SettingsSectionPreferences,
     #[strum(serialize = "settings.section.danger")]
     SettingsSectionDanger,
+    #[strum(serialize = "settings.row.preset_ape")]
+    SettingsRowPresetApe,
+    #[strum(serialize = "settings.row.preset_pro")]
+    SettingsRowPresetPro,
+    #[strum(serialize = "settings.row.preset_custom")]
+    SettingsRowPresetCustom,
+    #[strum(serialize = "settings.row.experience")]
+    SettingsRowExperience,
+    #[strum(serialize = "settings.row.tone")]
+    SettingsRowTone,
+    #[strum(serialize = "settings.row.explanations")]
+    SettingsRowExplanations,
+    #[strum(serialize = "settings.row.agent_style")]
+    SettingsRowAgentStyle,
     #[strum(serialize = "settings.row.language")]
     SettingsRowLanguage,
     #[strum(serialize = "settings.row.theme")]
@@ -276,6 +428,28 @@ pub enum Key {
     SettingsValueOn,
     #[strum(serialize = "settings.value.off")]
     SettingsValueOff,
+    #[strum(serialize = "settings.value.active")]
+    SettingsValueActive,
+    #[strum(serialize = "settings.value.inactive")]
+    SettingsValueInactive,
+    #[strum(serialize = "settings.value.custom")]
+    SettingsValueCustom,
+    #[strum(serialize = "settings.value.experience.simple")]
+    SettingsValueExperienceSimple,
+    #[strum(serialize = "settings.value.experience.pro")]
+    SettingsValueExperiencePro,
+    #[strum(serialize = "settings.value.tone.normal")]
+    SettingsValueToneNormal,
+    #[strum(serialize = "settings.value.tone.ape")]
+    SettingsValueToneApe,
+    #[strum(serialize = "settings.value.explanations.beginner")]
+    SettingsValueExplanationsBeginner,
+    #[strum(serialize = "settings.value.agent_style.chat")]
+    SettingsValueAgentStyleChat,
+    #[strum(serialize = "settings.value.agent_style.analyst")]
+    SettingsValueAgentStyleAnalyst,
+    #[strum(serialize = "dashboard.help.cycle_experience")]
+    DashboardHelpCycleExperience,
     #[strum(serialize = "settings.reset.prompt")]
     SettingsResetPrompt,
     #[strum(serialize = "settings.reset.input_label")]

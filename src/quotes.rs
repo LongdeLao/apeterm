@@ -34,7 +34,14 @@ pub fn update_market_quotes(
             symbol,
             price,
             price_change_percent,
-        } => update_quotes(crypto_quotes, symbol, price, price_change_percent, None, None),
+        } => update_quotes(
+            crypto_quotes,
+            symbol,
+            price,
+            price_change_percent,
+            None,
+            None,
+        ),
         MarketEvent::StockTicker {
             symbol,
             price,

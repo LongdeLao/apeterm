@@ -11,6 +11,7 @@ use crate::{
     app::{App, InputTarget, SettingsItem},
     i18n::{Key, Locale},
     pages::fill::Fill,
+    preferences::{AgentStyle, Experience, ExplanationLevel, Language, PreferencePreset, Tone},
     theme::current_theme,
     ui,
 };
@@ -53,7 +54,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 fn render_rows(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
     let rows = settings_rows(app).into_iter().enumerate().map(
-        |(index, (item, label, value, adjustable))| {
+        |(index, (item, label, value, adjustable, active))| {
             let selected = app.settings_selection == index;
             let is_reset = item == SettingsItem::Reset;
             let style = if is_reset && selected {
@@ -65,6 +66,10 @@ fn render_rows(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default()
                     .fg(theme.background.unwrap_or(Color::Black))
                     .bg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else if active {
+                Style::default()
+                    .fg(theme.accent)
                     .add_modifier(Modifier::BOLD)
             } else if is_reset {
                 Style::default()
@@ -107,19 +112,75 @@ fn render_rows(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(table, inset(area, 4, 2));
 }
 
-fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String, bool)> {
+fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String, bool, bool)> {
+    let preset = app.active_preference_preset();
     vec![
+        (
+            SettingsItem::ApePreset,
+            app.t(Key::SettingsRowPresetApe).to_string(),
+            preset_value(app, preset == PreferencePreset::Ape),
+            false,
+            preset == PreferencePreset::Ape,
+        ),
+        (
+            SettingsItem::ProPreset,
+            app.t(Key::SettingsRowPresetPro).to_string(),
+            preset_value(app, preset == PreferencePreset::Pro),
+            false,
+            preset == PreferencePreset::Pro,
+        ),
+        (
+            SettingsItem::CustomPreset,
+            app.t(Key::SettingsRowPresetCustom).to_string(),
+            if preset == PreferencePreset::Custom {
+                app.t(Key::SettingsValueCustom).to_string()
+            } else {
+                app.t(Key::SettingsValueInactive).to_string()
+            },
+            false,
+            preset == PreferencePreset::Custom,
+        ),
+        (
+            SettingsItem::Experience,
+            app.t(Key::SettingsRowExperience).to_string(),
+            experience_label(app, app.preferences.experience),
+            true,
+            false,
+        ),
+        (
+            SettingsItem::Tone,
+            app.t(Key::SettingsRowTone).to_string(),
+            tone_label(app, app.preferences.tone),
+            true,
+            false,
+        ),
+        (
+            SettingsItem::Explanations,
+            app.t(Key::SettingsRowExplanations).to_string(),
+            explanation_label(app, app.preferences.explanations),
+            true,
+            false,
+        ),
+        (
+            SettingsItem::AgentStyle,
+            app.t(Key::SettingsRowAgentStyle).to_string(),
+            agent_style_label(app, app.preferences.agent_style),
+            true,
+            false,
+        ),
         (
             SettingsItem::Language,
             app.t(Key::SettingsRowLanguage).to_string(),
-            locale_label(app, &app.locale),
+            language_label(app, app.preferences.language),
             true,
+            false,
         ),
         (
             SettingsItem::Theme,
             app.t(Key::SettingsRowTheme).to_string(),
             app.t(app.theme_name.label_key()).to_string(),
             true,
+            false,
         ),
         (
             SettingsItem::Onboarding,
@@ -130,14 +191,60 @@ fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String, bool)> {
                 app.t(Key::SettingsValueOn).to_string()
             },
             true,
+            false,
         ),
         (
             SettingsItem::Reset,
             app.t(Key::SettingsSectionDanger).to_string(),
             app.t(Key::SettingsRowReset).to_string(),
             false,
+            false,
         ),
     ]
+}
+
+fn preset_value(app: &App, active: bool) -> String {
+    if active {
+        app.t(Key::SettingsValueActive).to_string()
+    } else {
+        app.t(Key::SettingsValueInactive).to_string()
+    }
+}
+
+fn experience_label(app: &App, experience: Experience) -> String {
+    match experience {
+        Experience::Simple => app.t(Key::SettingsValueExperienceSimple),
+        Experience::Pro => app.t(Key::SettingsValueExperiencePro),
+    }
+    .to_string()
+}
+
+fn tone_label(app: &App, tone: Tone) -> String {
+    match tone {
+        Tone::Normal => app.t(Key::SettingsValueToneNormal),
+        Tone::Ape => app.t(Key::SettingsValueToneApe),
+    }
+    .to_string()
+}
+
+fn explanation_label(app: &App, explanations: ExplanationLevel) -> String {
+    match explanations {
+        ExplanationLevel::Off => app.t(Key::SettingsValueOff),
+        ExplanationLevel::Beginner => app.t(Key::SettingsValueExplanationsBeginner),
+    }
+    .to_string()
+}
+
+fn agent_style_label(app: &App, agent_style: AgentStyle) -> String {
+    match agent_style {
+        AgentStyle::Chat => app.t(Key::SettingsValueAgentStyleChat),
+        AgentStyle::Analyst => app.t(Key::SettingsValueAgentStyleAnalyst),
+    }
+    .to_string()
+}
+
+fn language_label(app: &App, language: Language) -> String {
+    locale_label(app, &language.locale())
 }
 
 fn render_reset_confirmation(frame: &mut Frame, app: &App) {
@@ -177,11 +284,13 @@ fn render_reset_confirmation(frame: &mut Frame, app: &App) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(" Confirm Reset ")
-                .border_style(Style::default().fg(if app.is_text_input_target(InputTarget::ResetConfirmation) {
-                    Color::LightRed
-                } else {
-                    theme.muted
-                }))
+                .border_style(Style::default().fg(
+                    if app.is_text_input_target(InputTarget::ResetConfirmation) {
+                        Color::LightRed
+                    } else {
+                        theme.muted
+                    },
+                ))
                 .style(Style::default().bg(background)),
         );
 
@@ -192,7 +301,8 @@ fn render_reset_confirmation(frame: &mut Frame, app: &App) {
             UnicodeWidthStr::width(format!("{}: ", app.t(Key::SettingsResetInputLabel)).as_str())
                 as u16;
         frame.set_cursor_position(Position::new(
-            area.x.saturating_add(1 + label_width + UnicodeWidthStr::width(input) as u16),
+            area.x
+                .saturating_add(1 + label_width + UnicodeWidthStr::width(input) as u16),
             area.y.saturating_add(5),
         ));
     }

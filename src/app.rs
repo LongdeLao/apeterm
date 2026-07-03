@@ -16,13 +16,17 @@ use crate::{
     db,
     i18n::{I18n, Key, Locale},
     market::{MarketEvent, MarketSession},
+    metrics::{MetricId, visible_key_stats},
     news::{
         self, FetchResult, NewsCategory, NewsItem, NewsPriority, NewsRuntimeConfig,
         WatchlistMatcher,
     },
+    preferences::{
+        AgentStyle, Experience, ExplanationLevel, Language, PreferencePreset, Tone, UserPreferences,
+    },
     quotes::{Quote, update_market_quotes},
-    sec::{self, EntityKind},
     search::{self, InstrumentDetails, LiveInstrumentDetails, SearchResult},
+    sec::{self, EntityKind},
 };
 
 const SEARCH_PAGE_SIZE: usize = 30;
@@ -123,6 +127,57 @@ pub enum SearchAssetKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailTimeframe {
+    OneDay,
+    OneWeek,
+    OneMonth,
+    ThreeMonths,
+    SixMonths,
+    OneYear,
+    FiveYears,
+    Max,
+}
+
+impl DetailTimeframe {
+    pub const ALL: [Self; 8] = [
+        Self::OneDay,
+        Self::OneWeek,
+        Self::OneMonth,
+        Self::ThreeMonths,
+        Self::SixMonths,
+        Self::OneYear,
+        Self::FiveYears,
+        Self::Max,
+    ];
+
+    pub const fn day_window(self) -> Option<i64> {
+        match self {
+            Self::OneDay => Some(1),
+            Self::OneWeek => Some(7),
+            Self::OneMonth => Some(31),
+            Self::ThreeMonths => Some(93),
+            Self::SixMonths => Some(186),
+            Self::OneYear => Some(366),
+            Self::FiveYears => Some(1_826),
+            Self::Max => None,
+        }
+    }
+
+    pub const fn label_key(self) -> Key {
+        match self {
+            Self::OneDay => Key::DetailsTimeframeOneDay,
+            Self::OneWeek => Key::DetailsTimeframeOneWeek,
+            Self::OneMonth => Key::DetailsTimeframeOneMonth,
+            Self::ThreeMonths => Key::DetailsTimeframeThreeMonths,
+            Self::SixMonths => Key::DetailsTimeframeSixMonths,
+            Self::OneYear => Key::DetailsTimeframeOneYear,
+            Self::FiveYears => Key::DetailsTimeframeFiveYears,
+            Self::Max => Key::DetailsTimeframeMax,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewsFilterTab {
     All,
     Watchlist,
@@ -149,6 +204,13 @@ pub enum SecTab {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsItem {
+    ApePreset,
+    ProPreset,
+    CustomPreset,
+    Experience,
+    Tone,
+    Explanations,
+    AgentStyle,
     Language,
     Theme,
     Onboarding,
@@ -248,6 +310,7 @@ pub struct App {
     pub onboarding_step: OnboardingStep,
     pub onboarding_complete: bool,
     pub locale: Locale,
+    pub preferences: UserPreferences,
     pub i18n: I18n,
     pub theme_name: ThemeName,
     pub dashboard_layout: DashboardLayout,
@@ -271,6 +334,11 @@ pub struct App {
     pub selected_live_details: Option<LiveInstrumentDetails>,
     pub live_details_loading: bool,
     live_details_receiver: Option<Receiver<Option<LiveInstrumentDetails>>>,
+    pub detail_timeframe: DetailTimeframe,
+    pub detail_sidebar_scroll: usize,
+    pub detail_metric_selection: usize,
+    pub detail_description_expanded: bool,
+    pub detail_context_expanded: bool,
     pub backend_insight: Option<BackendInsight>,
     pub backend_insight_loading: bool,
     pub backend_insight_status: Option<String>,
@@ -329,7 +397,8 @@ pub struct DashboardLayout {
 
 impl App {
     pub fn new(config: AppConfig) -> Self {
-        let locale = config.locale.clone();
+        let preferences = config.preferences;
+        let locale = preferences.language.locale();
         let onboarding_complete = config.onboarding.completed;
         Self {
             should_quit: false,
@@ -342,6 +411,7 @@ impl App {
             onboarding_step: OnboardingStep::Welcome,
             onboarding_complete,
             locale: locale.clone(),
+            preferences,
             i18n: I18n::new(locale),
             theme_name: config.theme,
             dashboard_layout: DashboardLayout::default(),
@@ -365,6 +435,11 @@ impl App {
             selected_live_details: None,
             live_details_loading: false,
             live_details_receiver: None,
+            detail_timeframe: DetailTimeframe::ThreeMonths,
+            detail_sidebar_scroll: 0,
+            detail_metric_selection: 0,
+            detail_description_expanded: false,
+            detail_context_expanded: false,
             backend_insight: None,
             backend_insight_loading: false,
             backend_insight_status: None,
@@ -416,7 +491,7 @@ impl App {
     }
 
     pub fn t(&self, key: Key) -> &str {
-        self.i18n.t(key)
+        self.i18n.t_with_tone(key, self.preferences.tone)
     }
 
     pub fn advance_onboarding(&mut self) {
@@ -532,7 +607,11 @@ impl App {
     }
 
     pub fn toggle_locale(&mut self) {
-        self.set_locale(self.i18n.next_locale(&self.locale));
+        self.set_language(self.preferences.language.next());
+    }
+
+    pub fn cycle_experience(&mut self) {
+        self.set_experience(self.preferences.experience.next());
     }
 
     pub fn close_help(&mut self) {
@@ -550,6 +629,9 @@ impl App {
             self.selected_live_details = None;
             self.live_details_loading = false;
             self.live_details_receiver = None;
+            self.detail_sidebar_scroll = 0;
+            self.detail_description_expanded = false;
+            self.detail_context_expanded = false;
             self.backend_insight = None;
             self.backend_insight_loading = false;
             self.backend_insight_status = None;
@@ -775,15 +857,18 @@ impl App {
             return;
         }
         self.spotlight.selection = match direction {
-            SelectionDirection::Previous => {
-                (self.spotlight.selection + count - 1) % count
-            }
+            SelectionDirection::Previous => (self.spotlight.selection + count - 1) % count,
             SelectionDirection::Next => (self.spotlight.selection + 1) % count,
         };
     }
 
     pub fn execute_spotlight_selection(&mut self) {
-        let Some(result) = self.spotlight.results.get(self.spotlight.selection).cloned() else {
+        let Some(result) = self
+            .spotlight
+            .results
+            .get(self.spotlight.selection)
+            .cloned()
+        else {
             self.close_spotlight();
             return;
         };
@@ -971,7 +1056,9 @@ impl App {
 
     pub fn send_agent_message(&mut self) {
         let context = crate::agent::context::build_context(self);
-        self.agent.submit(&context);
+        let loading_label = self.t(Key::AgentStatusLoading).to_string();
+        self.agent
+            .submit(&context, &self.preferences, loading_label);
     }
 
     pub fn move_search_selection(&mut self, direction: SelectionDirection) {
@@ -1015,6 +1102,7 @@ impl App {
                 self.selected_live_details = None;
                 self.live_details_receiver = None;
                 self.live_details_loading = false;
+                self.reset_detail_view_state();
                 self.backend_insight = None;
                 self.backend_insight_loading = false;
                 self.backend_insight_status = None;
@@ -1049,6 +1137,69 @@ impl App {
                 self.live_details_receiver = None;
             }
         }
+    }
+
+    pub fn cycle_detail_timeframe(&mut self, direction: SelectionDirection) {
+        let frames = DetailTimeframe::ALL;
+        let index = frames
+            .iter()
+            .position(|timeframe| *timeframe == self.detail_timeframe)
+            .unwrap_or(0);
+        self.detail_timeframe = match direction {
+            SelectionDirection::Previous => frames[(index + frames.len() - 1) % frames.len()],
+            SelectionDirection::Next => frames[(index + 1) % frames.len()],
+        };
+    }
+
+    pub fn select_detail_timeframe(&mut self, index: usize) {
+        if let Some(timeframe) = DetailTimeframe::ALL.get(index).copied() {
+            self.detail_timeframe = timeframe;
+        }
+    }
+
+    pub fn move_detail_sidebar_scroll(&mut self, direction: SelectionDirection) {
+        self.detail_sidebar_scroll = match direction {
+            SelectionDirection::Previous => self.detail_sidebar_scroll.saturating_sub(1),
+            SelectionDirection::Next => self.detail_sidebar_scroll.saturating_add(1),
+        };
+    }
+
+    pub fn cycle_detail_metric_focus(&mut self, direction: SelectionDirection) {
+        let count = visible_key_stats(self.preferences.experience).len();
+        if count == 0 {
+            self.detail_metric_selection = 0;
+            return;
+        }
+        self.detail_metric_selection = match direction {
+            SelectionDirection::Previous => (self.detail_metric_selection + count - 1) % count,
+            SelectionDirection::Next => (self.detail_metric_selection + 1) % count,
+        };
+    }
+
+    pub fn focused_detail_metric(&self) -> Option<MetricId> {
+        let metrics = visible_key_stats(self.preferences.experience);
+        metrics
+            .get(
+                self.detail_metric_selection
+                    .min(metrics.len().saturating_sub(1)),
+            )
+            .copied()
+    }
+
+    pub fn toggle_detail_description(&mut self) {
+        self.detail_description_expanded = !self.detail_description_expanded;
+    }
+
+    pub fn toggle_detail_context(&mut self) {
+        self.detail_context_expanded = !self.detail_context_expanded;
+    }
+
+    fn reset_detail_view_state(&mut self) {
+        self.detail_timeframe = DetailTimeframe::ThreeMonths;
+        self.detail_sidebar_scroll = 0;
+        self.detail_metric_selection = 0;
+        self.detail_description_expanded = false;
+        self.detail_context_expanded = false;
     }
 
     pub fn poll_backend_insight(&mut self) {
@@ -1191,9 +1342,47 @@ impl App {
     }
 
     fn set_locale(&mut self, locale: Locale) {
+        self.set_language(Language::from_locale(&locale));
+    }
+
+    fn set_language(&mut self, language: Language) {
+        self.preferences.language = language;
+        self.apply_preferences();
+    }
+
+    fn set_experience(&mut self, experience: Experience) {
+        self.preferences.experience = experience;
+        self.detail_metric_selection = 0;
+        self.apply_preferences();
+    }
+
+    fn set_tone(&mut self, tone: Tone) {
+        self.preferences.tone = tone;
+        self.apply_preferences();
+    }
+
+    fn set_explanations(&mut self, explanations: ExplanationLevel) {
+        self.preferences.explanations = explanations;
+        self.apply_preferences();
+    }
+
+    fn set_agent_style(&mut self, agent_style: AgentStyle) {
+        self.preferences.agent_style = agent_style;
+        self.apply_preferences();
+    }
+
+    fn set_preferences(&mut self, preferences: UserPreferences) {
+        self.preferences = preferences;
+        self.detail_metric_selection = 0;
+        self.apply_preferences();
+    }
+
+    fn apply_preferences(&mut self) {
+        let locale = self.preferences.language.locale();
         self.locale = locale.clone();
         self.i18n.set_active(locale.clone());
         self.config.locale = locale;
+        self.config.preferences = self.preferences;
         let _ = self.config.save();
     }
 
@@ -1339,14 +1528,16 @@ impl App {
 
         let (sender, receiver) = mpsc::channel();
         self.sec_receiver = Some(receiver);
-        thread::spawn(move || match sec::sync::sync_entity(&db_path, &config, entity_id) {
-            Ok(_) => {
-                let _ = sender.send(SecEvent::Done("SEC entity synced".to_string()));
-            }
-            Err(error) => {
-                let _ = sender.send(SecEvent::Error(error));
-            }
-        });
+        thread::spawn(
+            move || match sec::sync::sync_entity(&db_path, &config, entity_id) {
+                Ok(_) => {
+                    let _ = sender.send(SecEvent::Done("SEC entity synced".to_string()));
+                }
+                Err(error) => {
+                    let _ = sender.send(SecEvent::Error(error));
+                }
+            },
+        );
     }
 
     pub fn poll_sec(&mut self) {
@@ -1510,11 +1701,15 @@ impl App {
     pub fn selected_sec_entity_id(&self) -> Option<i64> {
         let connection = db::open(&self.ticker_db_path).ok()?;
         let entities = match self.sec_tab {
-            SecTab::Institutional => db::sec_repo::list_entities(&connection, EntityKind::Institution).ok()?,
+            SecTab::Institutional => {
+                db::sec_repo::list_entities(&connection, EntityKind::Institution).ok()?
+            }
             SecTab::Ceos => db::sec_repo::list_ceo_entities(&connection, false).ok()?,
             SecTab::Congress => db::sec_repo::list_ceo_entities(&connection, true).ok()?,
         };
-        let index = self.active_sec_selection().min(entities.len().saturating_sub(1));
+        let index = self
+            .active_sec_selection()
+            .min(entities.len().saturating_sub(1));
         entities.get(index).map(|entity| entity.id)
     }
 
@@ -1523,12 +1718,14 @@ impl App {
             return 0;
         };
         match self.sec_tab {
-            SecTab::Institutional => db::sec_repo::list_entities(&connection, EntityKind::Institution),
+            SecTab::Institutional => {
+                db::sec_repo::list_entities(&connection, EntityKind::Institution)
+            }
             SecTab::Ceos => db::sec_repo::list_ceo_entities(&connection, false),
             SecTab::Congress => db::sec_repo::list_ceo_entities(&connection, true),
         }
-            .map(|entities| entities.len())
-            .unwrap_or(0)
+        .map(|entities| entities.len())
+        .unwrap_or(0)
     }
 
     pub fn move_news_selection(&mut self, direction: SelectionDirection) {
@@ -1748,16 +1945,16 @@ impl App {
         };
         let all = db::notes_repo::list_all(&connection).unwrap_or_default();
 
-        let mut filtered: Vec<db::notes_repo::NoteRow> = if let Some(symbol) = &self.notes_ticker_filter
-        {
-            all.into_iter()
-                .filter(|note| note.tickers.iter().any(|ticker| ticker == symbol))
-                .collect()
-        } else {
-            all.into_iter()
-                .filter(|note| self.notes_matches_tab(note))
-                .collect()
-        };
+        let mut filtered: Vec<db::notes_repo::NoteRow> =
+            if let Some(symbol) = &self.notes_ticker_filter {
+                all.into_iter()
+                    .filter(|note| note.tickers.iter().any(|ticker| ticker == symbol))
+                    .collect()
+            } else {
+                all.into_iter()
+                    .filter(|note| self.notes_matches_tab(note))
+                    .collect()
+            };
 
         let query = self.notes_search_query.trim();
         if !query.is_empty() {
@@ -1905,7 +2102,14 @@ impl App {
             let tickers = self.extract_note_tickers(&draft.body);
             let tags = extract_note_tags(&draft.body);
             let now = chrono::Utc::now().timestamp();
-            let _ = db::notes_repo::update(&connection, draft.note_id, &draft.body, &tickers, &tags, now);
+            let _ = db::notes_repo::update(
+                &connection,
+                draft.note_id,
+                &draft.body,
+                &tickers,
+                &tags,
+                now,
+            );
         }
 
         let visible = self.notes_visible().len();
@@ -2103,6 +2307,10 @@ impl App {
         SettingsItem::ALL[self.settings_selection.min(SettingsItem::ALL.len() - 1)]
     }
 
+    pub fn active_preference_preset(&self) -> PreferencePreset {
+        self.preferences.preset()
+    }
+
     pub fn move_settings_selection(&mut self, direction: SelectionDirection) {
         if self.reset_confirmation.is_some() {
             return;
@@ -2129,6 +2337,19 @@ impl App {
         }
 
         match self.selected_settings_item() {
+            SettingsItem::ApePreset => {
+                self.set_preferences(UserPreferences::ape_preset(self.preferences.language))
+            }
+            SettingsItem::ProPreset => {
+                self.set_preferences(UserPreferences::pro_preset(self.preferences.language))
+            }
+            SettingsItem::CustomPreset => {}
+            SettingsItem::Experience => self.set_experience(self.preferences.experience.next()),
+            SettingsItem::Tone => self.set_tone(self.preferences.tone.next()),
+            SettingsItem::Explanations => {
+                self.set_explanations(self.preferences.explanations.next())
+            }
+            SettingsItem::AgentStyle => self.set_agent_style(self.preferences.agent_style.next()),
             SettingsItem::Language => self.toggle_locale(),
             SettingsItem::Theme => self.set_theme(self.theme_name.next()),
             SettingsItem::Onboarding => self.toggle_onboarding_preference(),
@@ -2147,26 +2368,25 @@ impl App {
         }
 
         match self.selected_settings_item() {
+            SettingsItem::ApePreset => {
+                self.set_preferences(UserPreferences::ape_preset(self.preferences.language))
+            }
+            SettingsItem::ProPreset => {
+                self.set_preferences(UserPreferences::pro_preset(self.preferences.language))
+            }
+            SettingsItem::CustomPreset => {}
+            SettingsItem::Experience => {
+                self.set_experience(self.preferences.experience.move_to(direction))
+            }
+            SettingsItem::Tone => self.set_tone(self.preferences.tone.move_to(direction)),
+            SettingsItem::Explanations => {
+                self.set_explanations(self.preferences.explanations.move_to(direction))
+            }
+            SettingsItem::AgentStyle => {
+                self.set_agent_style(self.preferences.agent_style.move_to(direction))
+            }
             SettingsItem::Language => {
-                let locales = self.i18n.available_locales();
-                if locales.is_empty() {
-                    return;
-                }
-                let current = locales
-                    .iter()
-                    .position(|locale| locale == &self.locale)
-                    .unwrap_or(0);
-                let next = match direction {
-                    SelectionDirection::Previous => {
-                        if current == 0 {
-                            locales.len() - 1
-                        } else {
-                            current - 1
-                        }
-                    }
-                    SelectionDirection::Next => (current + 1) % locales.len(),
-                };
-                self.set_locale(locales[next].clone());
+                self.set_language(self.preferences.language.move_to(direction));
             }
             SettingsItem::Theme => self.set_theme(self.theme_name.move_to(direction)),
             SettingsItem::Onboarding => self.toggle_onboarding_preference(),
@@ -2535,6 +2755,7 @@ impl App {
                 self.selected_details = Some(details);
                 self.selected_live_details = None;
                 self.live_details_loading = false;
+                self.reset_detail_view_state();
                 self.page = Page::Details;
                 self.search_message = None;
                 self.selected_news = None;
@@ -2656,7 +2877,8 @@ impl App {
     fn reset_settings_to_defaults(&mut self) {
         let config = AppConfig::default().unwrap_or_else(|_| <AppConfig as Default>::default());
         self.config = config.clone();
-        let locale = config.locale.clone();
+        self.preferences = config.preferences;
+        let locale = config.preferences.language.locale();
         self.locale = locale.clone();
         self.i18n.set_active(locale);
         self.theme_name = config.theme;
@@ -2914,7 +3136,19 @@ impl PanelId {
 }
 
 impl SettingsItem {
-    pub const ALL: [Self; 4] = [Self::Language, Self::Theme, Self::Onboarding, Self::Reset];
+    pub const ALL: [Self; 11] = [
+        Self::ApePreset,
+        Self::ProPreset,
+        Self::CustomPreset,
+        Self::Experience,
+        Self::Tone,
+        Self::Explanations,
+        Self::AgentStyle,
+        Self::Language,
+        Self::Theme,
+        Self::Onboarding,
+        Self::Reset,
+    ];
 }
 
 impl WindowKind {
@@ -3021,9 +3255,8 @@ fn adjust_percent(percent: u16, amount: i16) -> u16 {
 fn extract_note_tags(body: &str) -> Vec<String> {
     let mut tags = Vec::new();
     for token in body.split_whitespace() {
-        let trimmed = token.trim_matches(|character: char| {
-            character.is_ascii_punctuation() && character != '#'
-        });
+        let trimmed = token
+            .trim_matches(|character: char| character.is_ascii_punctuation() && character != '#');
         if trimmed.len() > 1 && trimmed.starts_with('#') && !tags.contains(&trimmed.to_string()) {
             tags.push(trimmed.to_string());
         }

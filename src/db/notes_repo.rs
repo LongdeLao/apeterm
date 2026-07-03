@@ -93,8 +93,8 @@ pub fn search_fts(connection: &Connection, query: &str) -> Result<Vec<i64>> {
 }
 
 pub fn all_ticker_symbols(connection: &Connection) -> Result<HashSet<String>> {
-    let mut statement =
-        connection.prepare("SELECT tickers FROM notes WHERE tickers IS NOT NULL AND tickers != ''")?;
+    let mut statement = connection
+        .prepare("SELECT tickers FROM notes WHERE tickers IS NOT NULL AND tickers != ''")?;
     let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
 
     let mut symbols = HashSet::new();

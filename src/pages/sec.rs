@@ -1,10 +1,10 @@
 use chrono::{DateTime, Local};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
-    Frame,
 };
 
 use crate::{

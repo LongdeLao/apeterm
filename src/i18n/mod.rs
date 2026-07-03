@@ -6,6 +6,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::IntoEnumIterator;
 use unicode_width::UnicodeWidthStr;
 
+use crate::preferences::Tone;
+
 pub mod keys;
 
 pub use keys::Key;
@@ -46,20 +48,25 @@ impl I18n {
         locales
     }
 
-    pub fn next_locale(&self, active: &Locale) -> Locale {
-        let locales = self.available_locales();
-        if locales.is_empty() {
-            return Locale::En;
-        }
-        let index = locales
-            .iter()
-            .position(|locale| locale == active)
-            .unwrap_or(0);
-        locales[(index + 1) % locales.len()].clone()
+    pub fn t(&self, key: Key) -> &str {
+        self.t_with_tone(key, Tone::Normal)
     }
 
-    pub fn t(&self, key: Key) -> &str {
+    pub fn t_with_tone(&self, key: Key, tone: Tone) -> &str {
         let raw_key: &'static str = key.into();
+        let tone_key = match tone {
+            Tone::Normal => None,
+            Tone::Ape => Some(format!("{raw_key}@ape")),
+        };
+        if let Some(tone_key) = tone_key.as_deref()
+            && let Some(value) = self
+                .locales
+                .get(&self.active)
+                .and_then(|locale| locale.get(tone_key))
+        {
+            return value.as_str();
+        }
+
         self.locales
             .get(&self.active)
             .and_then(|locale| locale.get(raw_key))
@@ -74,6 +81,20 @@ impl I18n {
 
     pub fn width(&self, key: Key) -> usize {
         UnicodeWidthStr::width(self.t(key))
+    }
+
+    pub fn metric_explanation(&self, key: Key) -> Option<&str> {
+        let raw_key: &'static str = key.into();
+        self.locales
+            .get(&self.active)
+            .and_then(|locale| locale.get(raw_key))
+            .or_else(|| {
+                self.locales
+                    .get(&Locale::En)
+                    .and_then(|locale| locale.get(raw_key))
+            })
+            .map(String::as_str)
+            .filter(|value| !value.trim().is_empty())
     }
 
     pub fn assert_complete(&self) {
@@ -154,10 +175,18 @@ impl<'de> Deserialize<'de> for Locale {
 pub fn validate_embedded_locales() -> Result<(), String> {
     let locales = load_locales().map_err(|error| error.to_string())?;
     let missing = missing_locale_keys(&locales);
-    if missing.is_empty() {
+    let empty = empty_locale_values(&locales);
+    if missing.is_empty() && empty.is_empty() {
         Ok(())
     } else {
-        Err(format!("missing locale keys:\n{}", missing.join("\n")))
+        let mut lines = Vec::new();
+        if !missing.is_empty() {
+            lines.push(format!("missing locale keys:\n{}", missing.join("\n")));
+        }
+        if !empty.is_empty() {
+            lines.push(format!("empty locale values:\n{}", empty.join("\n")));
+        }
+        Err(lines.join("\n"))
     }
 }
 
@@ -187,4 +216,59 @@ fn missing_locale_keys(locales: &HashMap<Locale, HashMap<String, String>>) -> Ve
     }
 
     missing
+}
+
+fn empty_locale_values(locales: &HashMap<Locale, HashMap<String, String>>) -> Vec<String> {
+    let mut empty = Vec::new();
+
+    for (locale, entries) in locales {
+        for key in Key::iter() {
+            let raw_key: &'static str = key.into();
+            if entries
+                .get(raw_key)
+                .is_some_and(|value| value.trim().is_empty())
+            {
+                empty.push(format!("{locale:?}: {raw_key}"));
+            }
+        }
+    }
+
+    empty
+}
+
+#[cfg(test)]
+mod tests {
+    use strum::IntoEnumIterator;
+
+    use super::*;
+
+    #[test]
+    fn every_key_resolves_for_every_locale_and_tone() {
+        for locale in [Locale::En, Locale::De] {
+            let i18n = I18n::new(locale.clone());
+            for tone in [Tone::Normal, Tone::Ape] {
+                for key in Key::iter() {
+                    let resolved = i18n.t_with_tone(key, tone);
+                    assert!(
+                        !resolved.trim().is_empty(),
+                        "empty copy for {locale:?} {tone:?} {key:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn german_ape_empty_state_uses_override_only_for_ape() {
+        let i18n = I18n::new(Locale::De);
+
+        assert_eq!(
+            i18n.t_with_tone(Key::SearchEmpty, Tone::Normal),
+            "Keine Daten gefunden."
+        );
+        assert_eq!(
+            i18n.t_with_tone(Key::SearchEmpty, Tone::Ape),
+            "Nix gefunden."
+        );
+    }
 }

@@ -43,7 +43,8 @@ struct FilingFile {
 pub fn sync_all(db_path: &std::path::Path, config: &SecConfig) -> Result<usize, String> {
     let connection = db::open(db_path).map_err(|error| error.to_string())?;
     crate::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
-    let entities = crate::db::sec_repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
+    let entities =
+        crate::db::sec_repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
     sync_entities(&connection, config, &entities)
 }
 
@@ -99,8 +100,12 @@ fn sync_single_entity(
 
     for filing in filings {
         let result = (|| -> Result<(), String> {
-            let xml =
-                fetch_filing_xml(client, entity, &filing.accession_no, &filing.primary_document)?;
+            let xml = fetch_filing_xml(
+                client,
+                entity,
+                &filing.accession_no,
+                &filing.primary_document,
+            )?;
             match entity.kind {
                 EntityKind::Institution => {
                     let holdings = parse_information_table(&xml)?;
@@ -216,7 +221,8 @@ fn search_house_ptrs(
     entity: &SecEntity,
     year: i32,
 ) -> Result<Vec<HouseSearchResult>, String> {
-    let search_html = client.get_text("https://disclosures-clerk.house.gov/FinancialDisclosure/ViewSearch")?;
+    let search_html =
+        client.get_text("https://disclosures-clerk.house.gov/FinancialDisclosure/ViewSearch")?;
     let token = Regex::new(r#"name="__RequestVerificationToken" type="hidden" value="([^"]+)""#)
         .map_err(|error| error.to_string())?
         .captures(&search_html)
@@ -257,7 +263,10 @@ fn parse_house_search_results(
     let mut results = Vec::new();
 
     for captures in pattern.captures_iter(html) {
-        let href = captures.name("href").map(|value| value.as_str()).unwrap_or_default();
+        let href = captures
+            .name("href")
+            .map(|value| value.as_str())
+            .unwrap_or_default();
         let filing = captures
             .name("filing")
             .map(|value| value.as_str())
@@ -304,7 +313,9 @@ fn normalized_name_tokens(value: &str) -> Vec<String> {
 
 fn name_matches_entity(candidate: &str, expected: &[String]) -> bool {
     let normalized = normalized_name_tokens(candidate);
-    expected.iter().all(|token| normalized.iter().any(|part| part == token))
+    expected
+        .iter()
+        .all(|token| normalized.iter().any(|part| part == token))
 }
 
 fn parse_house_ptr_pdf(bytes: &[u8]) -> Result<ParsedCongressFiling, String> {
@@ -319,11 +330,14 @@ fn parse_house_ptr_pdf(bytes: &[u8]) -> Result<ParsedCongressFiling, String> {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|error| error.to_string())?;
-        let output = child.wait_with_output().map_err(|error| error.to_string())?;
+        let output = child
+            .wait_with_output()
+            .map_err(|error| error.to_string())?;
         if !output.status.success() {
             return Err("house pdf parser failed".to_string());
         }
-        serde_json::from_slice::<ParsedCongressFiling>(&output.stdout).map_err(|error| error.to_string())
+        serde_json::from_slice::<ParsedCongressFiling>(&output.stdout)
+            .map_err(|error| error.to_string())
     })();
     let _ = fs::remove_file(&temp_path);
     result
@@ -340,7 +354,9 @@ fn upsert_congress_transactions(
     }
     let filed_at = parsed.filed_at;
     let filing_id = parsed.filing_id.unwrap_or_else(|| filing.filing_id.clone());
-    let transaction = connection.unchecked_transaction().map_err(|error| error.to_string())?;
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
     for (index, tx) in parsed.transactions.into_iter().enumerate() {
         transaction
             .execute(
@@ -356,7 +372,10 @@ fn upsert_congress_transactions(
                     entity.id,
                     filing_id,
                     index as i64,
-                    entity.subtitle.clone().unwrap_or_else(|| "House".to_string()),
+                    entity
+                        .subtitle
+                        .clone()
+                        .unwrap_or_else(|| "House".to_string()),
                     filing.source_url,
                     filed_at,
                     normalize_us_date(&tx.transaction_date),
@@ -415,7 +434,8 @@ fn house_ptr_script() -> PathBuf {
 pub fn sync_all_verbose(db_path: &std::path::Path, config: &SecConfig) -> Result<usize, String> {
     let connection = db::open(db_path).map_err(|error| error.to_string())?;
     crate::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
-    let entities = crate::db::sec_repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
+    let entities =
+        crate::db::sec_repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
     let client = SecClient::new(config)?;
     let mut synced = 0;
 
@@ -460,10 +480,16 @@ fn maybe_reset_institution_backfill(
     }
 
     connection
-        .execute("DELETE FROM thirteenf_holdings WHERE entity_id = ?1", [entity.id])
+        .execute(
+            "DELETE FROM thirteenf_holdings WHERE entity_id = ?1",
+            [entity.id],
+        )
         .map_err(|error| error.to_string())?;
     connection
-        .execute("DELETE FROM sec_sync_state WHERE entity_id = ?1", [entity.id])
+        .execute(
+            "DELETE FROM sec_sync_state WHERE entity_id = ?1",
+            [entity.id],
+        )
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -476,9 +502,7 @@ fn fetch_filing_xml(
 ) -> Result<String, String> {
     let cik_trimmed = entity.filer_cik.trim_start_matches('0');
     let accession_compact = accession_no.replace('-', "");
-    let base = format!(
-        "https://www.sec.gov/Archives/edgar/data/{cik_trimmed}/{accession_compact}"
-    );
+    let base = format!("https://www.sec.gov/Archives/edgar/data/{cik_trimmed}/{accession_compact}");
     let index: FilingIndex = client.get_json(&format!("{base}/index.json"))?;
 
     let mut candidates = index
@@ -505,7 +529,9 @@ fn fetch_filing_xml(
         }
     }
 
-    Err(format!("no XML document found for accession {accession_no}"))
+    Err(format!(
+        "no XML document found for accession {accession_no}"
+    ))
 }
 
 fn file_priority(name: &str, primary_document: &str) -> usize {
@@ -532,7 +558,9 @@ fn upsert_holdings(
     if holdings.is_empty() {
         return Err(format!("empty 13F holdings for {accession_no}"));
     }
-    let transaction = connection.unchecked_transaction().map_err(|e| e.to_string())?;
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|e| e.to_string())?;
     for holding in holdings {
         transaction
             .execute(
@@ -569,13 +597,19 @@ fn upsert_transactions(
         .map(|value| value.to_ascii_uppercase());
     let filtered = transactions
         .into_iter()
-        .filter(|tx| issuer_filter.as_ref().is_none_or(|value| &tx.ticker == value))
+        .filter(|tx| {
+            issuer_filter
+                .as_ref()
+                .is_none_or(|value| &tx.ticker == value)
+        })
         .collect::<Vec<_>>();
     if filtered.is_empty() {
         return Ok(());
     }
 
-    let transaction = connection.unchecked_transaction().map_err(|e| e.to_string())?;
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|e| e.to_string())?;
     for (index, row) in filtered.into_iter().enumerate() {
         let unique_accession = if index == 0 {
             accession_no.to_string()

@@ -134,17 +134,24 @@ def main():
         result["day_low"] = number(pick(fast, ["day_low", "dayLow"]))
 
         try:
-            history = ticker.history(period="3mo", interval="1d")[["Close"]].dropna()
+            history = ticker.history(period="5y", interval="1d")[["Close", "Volume"]].dropna(
+                subset=["Close"]
+            )
             points = {}
             for ts, row in history.iterrows():
                 close = number(row.get("Close"))
                 if close is None:
                     continue
+                volume = number(row.get("Volume"))
                 try:
                     unix_ts = int(ts.timestamp())
                 except Exception:
                     continue
-                points[unix_ts] = {"ts": unix_ts, "close": round(close, 4)}
+                points[unix_ts] = {
+                    "ts": unix_ts,
+                    "close": round(close, 4),
+                    "volume": volume,
+                }
             result["history"] = [points[key] for key in sorted(points)]
         except Exception:
             result["history"] = []

@@ -77,7 +77,8 @@ impl BackendClient {
             return Ok(None);
         }
 
-        let context: InsightContextResponse = self.get_json(&context_url(&self.base_url, &normalized))?;
+        let context: InsightContextResponse =
+            self.get_json(&context_url(&self.base_url, &normalized))?;
         let explanation: InsightExplanationResponse =
             self.get_json(&explanation_url(&self.base_url, &normalized))?;
 
@@ -89,9 +90,17 @@ impl BackendClient {
     }
 
     fn get_json<T: for<'de> Deserialize<'de>>(&self, url: &str) -> Result<T, String> {
-        let response = self.client.get(url).send().map_err(|error| error.to_string())?;
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .map_err(|error| error.to_string())?;
         if !response.status().is_success() {
-            return Err(format!("backend request failed: {} {}", response.status(), url));
+            return Err(format!(
+                "backend request failed: {} {}",
+                response.status(),
+                url
+            ));
         }
         response.json::<T>().map_err(|error| error.to_string())
     }

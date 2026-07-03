@@ -44,7 +44,11 @@ fn list_watchlists(app: &App) -> String {
         .iter()
         .enumerate()
         .map(|(index, list)| {
-            let marker = if index == active_index { " (active)" } else { "" };
+            let marker = if index == active_index {
+                " (active)"
+            } else {
+                ""
+            };
             let mut symbols = list.stock_symbols.clone();
             symbols.extend(list.crypto_symbols.iter().cloned());
             let symbols = if symbols.is_empty() {

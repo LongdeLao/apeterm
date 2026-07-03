@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
-    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -12,7 +12,7 @@ use crate::{
     db::notes_repo::NoteRow,
     i18n::Key,
     pages::panel,
-    theme::{current_theme, Theme},
+    theme::{Theme, current_theme},
 };
 
 const PIN_COL_WIDTH: u16 = 2;

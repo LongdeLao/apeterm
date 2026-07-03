@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
 };
 
 use crate::{
@@ -253,6 +253,7 @@ fn render_help(frame: &mut Frame, app: &App) {
         app.t(Key::DashboardHelpAddPanel),
         app.t(Key::DashboardHelpSearch),
         app.t(Key::DashboardHelpToggleLocale),
+        app.t(Key::DashboardHelpCycleExperience),
         app.t(Key::DashboardHelpDrag),
         app.t(Key::DashboardHelpClick),
         app.t(Key::DashboardHelpClosePanel),

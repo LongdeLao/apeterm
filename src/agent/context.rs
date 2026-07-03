@@ -36,11 +36,7 @@ pub fn build_context(app: &App) -> String {
     let active_index = app.active_watchlist_index();
     if let Some(active) = lists.get(active_index) {
         let _ = writeln!(context, "active watchlist: {}", active.name);
-        let _ = writeln!(
-            context,
-            "  stocks: {}",
-            join_or_none(&active.stock_symbols)
-        );
+        let _ = writeln!(context, "  stocks: {}", join_or_none(&active.stock_symbols));
         let _ = writeln!(
             context,
             "  crypto: {}",

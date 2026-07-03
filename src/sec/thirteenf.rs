@@ -5,14 +5,15 @@ use crate::sec::types::ParsedHolding;
 pub fn parse_information_table(xml: &str) -> Result<Vec<ParsedHolding>, String> {
     let row_re = Regex::new(r"(?s)<infoTable\b[^>]*>(.*?)</infoTable>")
         .map_err(|error| error.to_string())?;
-    let cusip_re = Regex::new(r"(?s)<cusip\b[^>]*>\s*(.*?)\s*</cusip>")
-        .map_err(|error| error.to_string())?;
-    let value_re = Regex::new(r"(?s)<value\b[^>]*>\s*(.*?)\s*</value>")
-        .map_err(|error| error.to_string())?;
+    let cusip_re =
+        Regex::new(r"(?s)<cusip\b[^>]*>\s*(.*?)\s*</cusip>").map_err(|error| error.to_string())?;
+    let value_re =
+        Regex::new(r"(?s)<value\b[^>]*>\s*(.*?)\s*</value>").map_err(|error| error.to_string())?;
     let shares_re = Regex::new(r"(?s)<sshPrnamt\b[^>]*>\s*(.*?)\s*</sshPrnamt>")
         .map_err(|error| error.to_string())?;
-    let symbol_re = Regex::new(r"(?s)<issuerTradingSymbol\b[^>]*>\s*(.*?)\s*</issuerTradingSymbol>")
-        .map_err(|error| error.to_string())?;
+    let symbol_re =
+        Regex::new(r"(?s)<issuerTradingSymbol\b[^>]*>\s*(.*?)\s*</issuerTradingSymbol>")
+            .map_err(|error| error.to_string())?;
     let issuer_re = Regex::new(r"(?s)<nameOfIssuer\b[^>]*>\s*(.*?)\s*</nameOfIssuer>")
         .map_err(|error| error.to_string())?;
     let mut holdings = Vec::new();
@@ -25,19 +26,22 @@ pub fn parse_information_table(xml: &str) -> Result<Vec<ParsedHolding>, String> 
         let Some(cusip) = extract_with_regex(row, &cusip_re) else {
             continue;
         };
-        let Some(value_usd) = extract_with_regex(row, &value_re)
-            .and_then(|value| parse_i64(&value)) else {
+        let Some(value_usd) =
+            extract_with_regex(row, &value_re).and_then(|value| parse_i64(&value))
+        else {
             continue;
         };
-        let Some(shares) = extract_with_regex(row, &shares_re)
-            .and_then(|value| parse_i64(&value)) else {
+        let Some(shares) = extract_with_regex(row, &shares_re).and_then(|value| parse_i64(&value))
+        else {
             continue;
         };
 
         let ticker = extract_with_regex(row, &symbol_re)
             .filter(|value| !value.is_empty())
             .map(|value| value.to_ascii_uppercase())
-            .or_else(|| extract_with_regex(row, &issuer_re).and_then(|value| readable_issuer_label(&value)));
+            .or_else(|| {
+                extract_with_regex(row, &issuer_re).and_then(|value| readable_issuer_label(&value))
+            });
 
         holdings.push(ParsedHolding {
             cusip,

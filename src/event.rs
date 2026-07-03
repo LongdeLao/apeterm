@@ -1,8 +1,8 @@
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::app::{
-    App, AppMode, InputTarget, MoveDirection, Page, PanelId, SelectionDirection,
-    SplitDirection, WatchlistKind, WindowKind,
+    App, AppMode, InputTarget, MoveDirection, Page, PanelId, SelectionDirection, SplitDirection,
+    WatchlistKind, WindowKind,
 };
 
 pub fn handle_event(app: &mut App, event: Event) {
@@ -37,6 +37,10 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
 
     if key_code == KeyCode::Char('a') && !is_control && can_open_agent(app) {
         app.open_agent();
+        return;
+    }
+    if key_code == KeyCode::Char('E') && !is_control {
+        app.cycle_experience();
         return;
     }
 
@@ -87,7 +91,7 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
             Page::Onboarding => handle_onboarding_key(app, key_code),
             Page::Dashboard => handle_dashboard_key(app, key_code, modifiers),
             Page::Search => handle_search_key(app, key_code),
-            Page::Details => {}
+            Page::Details => handle_details_key(app, key_code),
             Page::Settings => handle_settings_key(app, key_code),
         },
     }
@@ -335,7 +339,6 @@ fn handle_sec_key(app: &mut App, key_code: KeyCode) -> bool {
     }
 }
 
-
 fn handle_text_input_key(
     app: &mut App,
     target: InputTarget,
@@ -419,6 +422,29 @@ fn handle_search_key(app: &mut App, key_code: KeyCode) {
     }
 }
 
+fn handle_details_key(app: &mut App, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Char('t') | KeyCode::Right => app.cycle_detail_timeframe(SelectionDirection::Next),
+        KeyCode::Char('T') | KeyCode::Left => {
+            app.cycle_detail_timeframe(SelectionDirection::Previous)
+        }
+        KeyCode::Char(character) if ('1'..='8').contains(&character) => {
+            app.select_detail_timeframe((character as u8 - b'1') as usize)
+        }
+        KeyCode::Tab => app.cycle_detail_metric_focus(SelectionDirection::Next),
+        KeyCode::BackTab => app.cycle_detail_metric_focus(SelectionDirection::Previous),
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.move_detail_sidebar_scroll(SelectionDirection::Previous)
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.move_detail_sidebar_scroll(SelectionDirection::Next)
+        }
+        KeyCode::Char('e') => app.toggle_detail_description(),
+        KeyCode::Char('x') => app.toggle_detail_context(),
+        _ => {}
+    }
+}
+
 fn handle_settings_key(app: &mut App, key_code: KeyCode) {
     match key_code {
         KeyCode::Left | KeyCode::Char('h') => {
@@ -436,12 +462,8 @@ fn handle_settings_key(app: &mut App, key_code: KeyCode) {
 
 fn handle_watchlist_edit_key(app: &mut App, key_code: KeyCode) {
     match key_code {
-        KeyCode::Left => {
-            app.cycle_active_watchlist(SelectionDirection::Previous)
-        }
-        KeyCode::Right => {
-            app.cycle_active_watchlist(SelectionDirection::Next)
-        }
+        KeyCode::Left => app.cycle_active_watchlist(SelectionDirection::Previous),
+        KeyCode::Right => app.cycle_active_watchlist(SelectionDirection::Next),
         KeyCode::Up | KeyCode::Char('k') => {
             app.move_watchlist_selection(SelectionDirection::Previous)
         }

@@ -48,7 +48,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
 
     let notes_symbols = app.notes_ticker_symbols();
     let mut lines = Vec::new();
-    push_watchlist_rows(&mut lines, app, &notes_symbols, theme.foreground, theme.muted);
+    push_watchlist_rows(
+        &mut lines,
+        app,
+        &notes_symbols,
+        theme.foreground,
+        theme.muted,
+    );
     if lines.is_empty() {
         lines.push(Line::from(""));
     }
@@ -91,7 +97,10 @@ fn render_watchlist_tabs(frame: &mut Frame, app: &App, area: Rect) {
                 }
                 spans
             })
-            .chain([Span::raw("  "), Span::styled("+", Style::default().fg(theme.muted))])
+            .chain([
+                Span::raw("  "),
+                Span::styled("+", Style::default().fg(theme.muted)),
+            ])
             .collect::<Vec<_>>(),
     );
     frame.render_widget(Paragraph::new(line), area);
@@ -131,7 +140,10 @@ fn push_watchlist_rows<'a>(
     }
 
     for (index, symbol) in app.stock_watchlist().iter().enumerate() {
-        let quote = app.stock_quotes.iter().find(|quote| quote.symbol == *symbol);
+        let quote = app
+            .stock_quotes
+            .iter()
+            .find(|quote| quote.symbol == *symbol);
         lines.push(symbol_line(
             app,
             WatchlistEditRow::Stock(index),
@@ -146,7 +158,10 @@ fn push_watchlist_rows<'a>(
     }
 
     for (index, symbol) in app.crypto_watchlist().iter().enumerate() {
-        let quote = app.crypto_quotes.iter().find(|quote| quote.symbol == *symbol);
+        let quote = app
+            .crypto_quotes
+            .iter()
+            .find(|quote| quote.symbol == *symbol);
         lines.push(symbol_line(
             app,
             WatchlistEditRow::Crypto(index),
@@ -232,7 +247,11 @@ fn symbol_line<'a>(
     }
 }
 
-fn notes_indicator(app: &App, symbol: &str, notes_symbols: &std::collections::HashSet<String>) -> Span<'static> {
+fn notes_indicator(
+    app: &App,
+    symbol: &str,
+    notes_symbols: &std::collections::HashSet<String>,
+) -> Span<'static> {
     if notes_symbols.contains(symbol) {
         let theme = current_theme(app.theme_name);
         Span::styled("● ", Style::default().fg(theme.accent))
@@ -319,7 +338,10 @@ fn quote_line<'a>(
         };
         spans.push(Span::raw("  "));
         spans.push(Span::styled("RV ", Style::default().fg(foreground)));
-        spans.push(Span::styled(format!("{rvol:.1}x"), Style::default().fg(rvol_color)));
+        spans.push(Span::styled(
+            format!("{rvol:.1}x"),
+            Style::default().fg(rvol_color),
+        ));
     }
 
     Line::from(spans)
@@ -368,7 +390,12 @@ fn render_market_state(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
 }
 
-fn format_symbol_label(prefix: &str, display_symbol: &str, symbol: &str, symbol_width: usize) -> String {
+fn format_symbol_label(
+    prefix: &str,
+    display_symbol: &str,
+    symbol: &str,
+    symbol_width: usize,
+) -> String {
     let label = if display_symbol.eq(symbol) {
         display_symbol.to_string()
     } else {
@@ -456,12 +483,10 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(panel, modal);
     if focused {
         frame.set_cursor_position(Position::new(
-            modal
-                .x
-                .saturating_add(
-                    1 + UnicodeWidthStr::width(label_text.as_str()) as u16
-                        + UnicodeWidthStr::width(input) as u16,
-                ),
+            modal.x.saturating_add(
+                1 + UnicodeWidthStr::width(label_text.as_str()) as u16
+                    + UnicodeWidthStr::width(input) as u16,
+            ),
             modal.y.saturating_add(1),
         ));
     }

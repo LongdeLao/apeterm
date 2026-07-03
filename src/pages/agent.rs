@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
-    Frame,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -11,7 +11,7 @@ use crate::{
     agent::{AgentController, AgentRole, Badge},
     app::{App, InputTarget},
     i18n::Key,
-    theme::{current_theme, Theme},
+    theme::{Theme, current_theme},
 };
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
@@ -96,7 +96,10 @@ fn render_input(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
 
     let focused = app.is_text_input_target(InputTarget::Agent);
     let input_text = if app.agent.input.is_empty() {
-        Span::styled("Ask anything...", Style::default().fg(theme.muted))
+        Span::styled(
+            app.t(Key::CopyAgentPlaceholder).to_string(),
+            Style::default().fg(theme.muted),
+        )
     } else {
         Span::styled(
             app.agent.input.clone(),
@@ -143,7 +146,7 @@ fn build_transcript(app: &App, theme: &Theme, width: u16) -> Vec<Line<'static>> 
 
     if app.agent.messages.is_empty() && !app.agent.busy {
         lines.push(Line::from(Span::styled(
-            "How can I help?".to_string(),
+            app.t(Key::AgentStatusEmpty).to_string(),
             Style::default()
                 .fg(theme.foreground)
                 .add_modifier(Modifier::BOLD),

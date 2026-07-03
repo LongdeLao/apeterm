@@ -42,6 +42,8 @@ pub struct InstrumentDetails {
 pub struct HistoryPoint {
     pub ts: i64,
     pub close: f64,
+    #[serde(default)]
+    pub volume: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -193,9 +195,7 @@ pub fn spotlight_prefix_search(
         LIMIT ?2
         ",
     )?;
-    rows_to_search_results(
-        statement.query_map(params![query, limit as i64], read_search_result)?,
-    )
+    rows_to_search_results(statement.query_map(params![query, limit as i64], read_search_result)?)
 }
 
 fn popular(connection: &Connection, asset_type: &str, limit: usize) -> Result<Vec<SearchResult>> {

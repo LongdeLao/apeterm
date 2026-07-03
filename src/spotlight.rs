@@ -99,7 +99,9 @@ impl SpotlightPanel {
 
     pub fn apply(&self, app: &mut App) {
         match self {
-            SpotlightPanel::Watchlist => app.spotlight_focus_panel(PanelId::Watchlist, WindowKind::Watchlist),
+            SpotlightPanel::Watchlist => {
+                app.spotlight_focus_panel(PanelId::Watchlist, WindowKind::Watchlist)
+            }
             SpotlightPanel::News => app.spotlight_focus_panel(PanelId::News, WindowKind::News),
             SpotlightPanel::Notes => app.spotlight_focus_panel(PanelId::Notes, WindowKind::Notes),
             SpotlightPanel::Congress => {
@@ -211,7 +213,12 @@ fn default_results() -> Vec<SpotlightResult> {
 /// doesn't match at all. Without this, a panel/action whose *keywords*
 /// happen to contain the query (e.g. Settings' "...theme...") could
 /// outrank an entry whose *name* is a direct match (e.g. "Toggle Theme").
-fn score(matcher: &SkimMatcherV2, primary: &str, secondary: Option<&str>, query: &str) -> Option<i64> {
+fn score(
+    matcher: &SkimMatcherV2,
+    primary: &str,
+    secondary: Option<&str>,
+    query: &str,
+) -> Option<i64> {
     if let Some(score) = matcher.fuzzy_match(primary, query) {
         return Some(score * 2);
     }
@@ -223,7 +230,9 @@ fn ranked_results(app: &App, query: &str) -> Vec<SpotlightResult> {
     let mut scored: Vec<(i64, SpotlightResult)> = Vec::new();
 
     if let Ok(connection) = db::open(&app.ticker_db_path) {
-        if let Ok(symbols) = search::spotlight_prefix_search(&connection, query, SYMBOL_CANDIDATE_LIMIT) {
+        if let Ok(symbols) =
+            search::spotlight_prefix_search(&connection, query, SYMBOL_CANDIDATE_LIMIT)
+        {
             for symbol_result in symbols {
                 let haystack = format!("{} {}", symbol_result.symbol, symbol_result.name);
                 if let Some(score) = score(&matcher, &haystack, None, query) {

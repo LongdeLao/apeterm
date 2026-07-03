@@ -20,40 +20,19 @@ use std::{
 use crate::{
     agent::{
         llm_client::{LlmClient, LlmError},
-        messages::{
-            AgentMessage, AgentRole, Badge, LlmMessage, LlmRequest, LlmResponse, LlmRole,
-        },
+        messages::{AgentMessage, AgentRole, Badge, LlmMessage, LlmRequest, LlmResponse, LlmRole},
         openrouter::OpenRouterClient,
+        prompts,
         tool_call::{AssistantAction, ToolCall, ToolResult, parse_assistant_action},
         tools,
     },
     config::LlmConfig,
+    preferences::UserPreferences,
 };
 
 /// Upper bound on consecutive tool rounds within one user turn, so a
 /// misbehaving model cannot loop forever.
 const MAX_TOOL_ROUNDS: u8 = 4;
-
-const SYSTEM_PROMPT: &str = r#"You are ApeTerm's terminal agent, embedded in a stock-market terminal app.
-
-Reply with exactly one JSON object per turn, nothing else:
-  {"type": "message", "content": "<short reply for the user>"}
-  {"type": "tool_call", "tool": "<tool name>", "args": {...}, "note": "<very short present-tense phrase shown while the tool runs, e.g. 'adding UBER'>"}
-
-Available tools:
-{tools}
-
-Rules:
-- Prefer tool calls for any app action (watchlists, opening symbols).
-- Always include a short "note" with a tool call; it is shown to the user while the tool runs.
-- After a successful tool run, confirm in one short sentence (e.g. "Done — UBER is on Main.").
-- Tool results arrive as {"type": "tool_result", ...}; after one, either call another tool or send a final message.
-- Never claim app state changed unless a tool_result confirmed success.
-- Ask a concise clarifying question only when truly required.
-- Keep responses compact; this is a narrow terminal panel.
-
-Current app context:
-{context}"#;
 
 #[derive(Debug)]
 pub struct AgentController {
@@ -86,18 +65,17 @@ impl std::fmt::Debug for dyn LlmClient {
 
 impl AgentController {
     pub fn new(config: &LlmConfig) -> Self {
-        let (client, client_error, model_label) =
-            match OpenRouterClient::from_config(config) {
-                Ok(client) => {
-                    let label = client.label();
-                    (
-                        Some(Arc::new(client) as Arc<dyn LlmClient>),
-                        None,
-                        Some(label),
-                    )
-                }
-                Err(error) => (None, Some(error.to_string()), None),
-            };
+        let (client, client_error, model_label) = match OpenRouterClient::from_config(config) {
+            Ok(client) => {
+                let label = client.label();
+                (
+                    Some(Arc::new(client) as Arc<dyn LlmClient>),
+                    None,
+                    Some(label),
+                )
+            }
+            Err(error) => (None, Some(error.to_string()), None),
+        };
 
         Self {
             panel_open: false,
@@ -124,7 +102,7 @@ impl AgentController {
 
     /// Sends the pending input, refreshing the system prompt with the given
     /// app context. No-op while a request is in flight or input is empty.
-    pub fn submit(&mut self, context: &str) {
+    pub fn submit(&mut self, context: &str, prefs: &UserPreferences, loading_label: String) {
         if self.busy {
             return;
         }
@@ -140,7 +118,7 @@ impl AgentController {
             badge: None,
         });
         self.auto_scroll = true;
-        self.work_label = "thinking".to_string();
+        self.work_label = loading_label;
         self.turn_status = None;
 
         if self.client.is_none() {
@@ -152,7 +130,7 @@ impl AgentController {
             return;
         }
 
-        let system = SYSTEM_PROMPT
+        let system = prompts::build_system_prompt(prefs)
             .replace("{tools}", tools::catalog())
             .replace("{context}", context);
         match self.history.first_mut() {
@@ -195,9 +173,9 @@ impl AgentController {
             AssistantAction::Message(text) => {
                 self.history
                     .push(LlmMessage::new(LlmRole::Assistant, response.content));
-                let badge = self.turn_status.map(|ok| {
-                    if ok { Badge::Ok } else { Badge::Failed }
-                });
+                let badge = self
+                    .turn_status
+                    .map(|ok| if ok { Badge::Ok } else { Badge::Failed });
                 self.push_message(AgentRole::Assistant, text, badge);
                 self.finish_turn(None);
                 None

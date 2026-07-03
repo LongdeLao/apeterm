@@ -59,7 +59,12 @@ impl SecClient {
             .map_err(|error| error.to_string())
     }
 
-    pub fn post_form(&self, url: &str, params: &[(String, String)], referer: &str) -> Result<String, String> {
+    pub fn post_form(
+        &self,
+        url: &str,
+        params: &[(String, String)],
+        referer: &str,
+    ) -> Result<String, String> {
         let _tokens = self.acquire_token();
         self.http
             .post(url)

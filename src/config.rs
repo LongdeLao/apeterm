@@ -7,7 +7,7 @@ use std::{
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
-use crate::{app::ThemeName, i18n::Locale};
+use crate::{app::ThemeName, i18n::Locale, preferences::UserPreferences};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -16,6 +16,8 @@ pub struct AppConfig {
     pub ticker_db_path: PathBuf,
     #[serde(default)]
     pub locale: Locale,
+    #[serde(default)]
+    pub preferences: UserPreferences,
     #[serde(default)]
     pub onboarding: OnboardingConfig,
     #[serde(default)]
@@ -157,10 +159,19 @@ impl AppConfig {
         let mut config = Self::default()?;
         let config_path = config_path()?;
 
+        let mut should_save = false;
         if config_path.exists() {
             let bytes = fs::read(&config_path)?;
+            let missing_preferences = serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .is_none_or(|value| value.get("preferences").is_none());
             if let Ok(file_config) = serde_json::from_slice::<Self>(&bytes) {
                 config = file_config;
+                if missing_preferences {
+                    config.preferences.language =
+                        crate::preferences::Language::from_locale(&config.locale);
+                    should_save = true;
+                }
             }
         } else if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
@@ -212,10 +223,14 @@ impl AppConfig {
 
         if should_migrate_legacy_news_feeds(&config.news.feeds) {
             config.news.feeds = default_news_feeds();
-            let _ = config.save();
+            should_save = true;
         }
 
+        config.locale = config.preferences.language.locale();
         config.watchlist.normalize();
+        if should_save {
+            let _ = config.save();
+        }
 
         Ok(config)
     }
@@ -236,9 +251,11 @@ impl AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
+        let preferences = UserPreferences::default();
         Self {
             ticker_db_path: default_ticker_db_path(),
-            locale: Locale::En,
+            locale: preferences.language.locale(),
+            preferences,
             onboarding: OnboardingConfig::default(),
             theme: ThemeName::default(),
             watchlist: WatchlistConfig::default(),
@@ -596,6 +613,19 @@ mod tests {
             vec!["BTCUSDT", "ETHUSDT", "SOLUSDT"]
         );
         assert!(!config.onboarding.completed);
+        assert_eq!(
+            config.preferences.experience,
+            crate::preferences::Experience::Pro
+        );
+        assert_eq!(config.preferences.tone, crate::preferences::Tone::Normal);
+        assert_eq!(
+            config.preferences.explanations,
+            crate::preferences::ExplanationLevel::Off
+        );
+        assert_eq!(
+            config.preferences.agent_style,
+            crate::preferences::AgentStyle::Chat
+        );
         assert_eq!(config.metadata_provider.requests_per_minute, 600);
         assert_eq!(config.update.enrich_max_age_hours, 24);
         assert!(config.backend.enabled);
@@ -605,5 +635,31 @@ mod tests {
         assert!(config.news.enable_financial_juice);
         assert!(config.news.enable_nasdaq);
         assert_eq!(config.news.refresh_interval_seconds, 60);
+    }
+
+    #[test]
+    fn preferences_round_trip_and_missing_section_defaults() {
+        let config = AppConfig {
+            preferences: UserPreferences::ape_preset(crate::preferences::Language::German),
+            ..<AppConfig as Default>::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let decoded: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.preferences, config.preferences);
+
+        let decoded: AppConfig = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
+        assert_eq!(
+            decoded.preferences.experience,
+            crate::preferences::Experience::Pro
+        );
+        assert_eq!(decoded.preferences.tone, crate::preferences::Tone::Normal);
+        assert_eq!(
+            decoded.preferences.explanations,
+            crate::preferences::ExplanationLevel::Off
+        );
+        assert_eq!(
+            decoded.preferences.agent_style,
+            crate::preferences::AgentStyle::Chat
+        );
     }
 }

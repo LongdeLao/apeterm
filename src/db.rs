@@ -4,10 +4,10 @@ use rusqlite::{Connection, Result};
 
 use crate::config;
 
-#[path = "db/sec_repo.rs"]
-pub mod sec_repo;
 #[path = "db/notes_repo.rs"]
 pub mod notes_repo;
+#[path = "db/sec_repo.rs"]
+pub mod sec_repo;
 
 pub fn open(path: &Path) -> Result<Connection> {
     config::ensure_parent(path)
@@ -193,7 +193,10 @@ pub fn initialize(connection: &Connection) -> Result<()> {
 
     static FTS_REBUILT: std::sync::Once = std::sync::Once::new();
     FTS_REBUILT.call_once(|| {
-        let _ = connection.execute("INSERT INTO instruments_fts(instruments_fts) VALUES('rebuild')", []);
+        let _ = connection.execute(
+            "INSERT INTO instruments_fts(instruments_fts) VALUES('rebuild')",
+            [],
+        );
     });
     Ok(())
 }

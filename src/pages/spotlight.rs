@@ -1,14 +1,14 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
 };
 
 use crate::{
     app::App,
     i18n::Key,
-    spotlight::{SpotlightCategory, MAX_RESULTS},
+    spotlight::{MAX_RESULTS, SpotlightCategory},
     theme::current_theme,
 };
 
@@ -89,7 +89,9 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect, modal_background: Co
                 ratatui::text::Span::styled(marker, Style::default().fg(theme.accent)),
                 ratatui::text::Span::styled(
                     format!(" {:<6}", result.category.badge()),
-                    Style::default().fg(badge_color).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(badge_color)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 ratatui::text::Span::styled(result.label.clone(), row_style),
             ];
@@ -103,10 +105,7 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect, modal_background: Co
         })
         .collect();
 
-    frame.render_widget(
-        Paragraph::new(lines).alignment(Alignment::Left),
-        area,
-    );
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Left), area);
 }
 
 fn centered_rect(area: Rect, width_percent: u16, height: u16) -> Rect {
