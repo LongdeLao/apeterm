@@ -48,11 +48,14 @@ pub struct HistoryPoint {
 pub struct LiveInstrumentDetails {
     pub price: Option<f64>,
     pub previous_close: Option<f64>,
+    pub day_volume: Option<f64>,
     pub open: Option<f64>,
     pub day_high: Option<f64>,
     pub day_low: Option<f64>,
     pub market_cap: Option<f64>,
     pub avg_volume: Option<f64>,
+    pub extended_price: Option<f64>,
+    pub extended_change_percent: Option<f64>,
     pub week_52_high: Option<f64>,
     pub week_52_low: Option<f64>,
     pub trailing_pe: Option<f64>,
@@ -62,8 +65,11 @@ pub struct LiveInstrumentDetails {
     pub next_earnings_days: Option<i64>,
     pub summary: Option<String>,
     pub summary_de: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
     pub country: Option<String>,
     pub website: Option<String>,
+    pub full_time_employees: Option<f64>,
     #[serde(default)]
     pub history: Vec<HistoryPoint>,
 }

@@ -253,6 +253,7 @@ fn quote_line<'a>(
     foreground: Color,
     symbol_width: usize,
 ) -> Line<'a> {
+    let theme = current_theme(app.theme_name);
     let is_flashing = quote
         .flash_until
         .is_some_and(|flash_until| flash_until > Instant::now());
@@ -272,12 +273,12 @@ fn quote_line<'a>(
         PriceDirection::Down => "▼",
         PriceDirection::Flat => "•",
     };
-    let percent_color = if quote.price_change_percent >= 0.0 {
+    let percent_color = if quote.change_percent >= 0.0 {
         Color::Rgb(34, 197, 94)
     } else {
         Color::Rgb(239, 68, 68)
     };
-    let percent_arrow = if quote.price_change_percent >= 0.0 {
+    let percent_arrow = if quote.change_percent >= 0.0 {
         "▲"
     } else {
         "▼"
@@ -287,7 +288,7 @@ fn quote_line<'a>(
     } else {
         Style::default().fg(foreground)
     };
-    Line::from(vec![
+    let mut spans = vec![
         notes_indicator(app, symbol, notes_symbols),
         Span::styled(
             format_symbol_label(prefix, display_symbol, symbol, symbol_width),
@@ -296,10 +297,45 @@ fn quote_line<'a>(
         Span::styled(format!("{arrow} "), style),
         Span::styled(format!("{:>12.2}  ", quote.price), style),
         Span::styled(
-            format!("{percent_arrow} {:+.2}%", quote.price_change_percent),
+            format!("{percent_arrow} {:+.2}%", quote.change_percent),
             Style::default().fg(percent_color),
         ),
-    ])
+    ];
+
+    if let Some(volume) = quote.day_volume {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled("VOL ", Style::default().fg(foreground)));
+        spans.push(Span::styled(
+            format_compact_volume(volume),
+            Style::default().fg(theme.muted),
+        ));
+    }
+
+    if let Some(rvol) = quote.relative_volume {
+        let rvol_color = if rvol > 2.0 {
+            Color::Rgb(249, 115, 22)
+        } else {
+            theme.muted
+        };
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled("RV ", Style::default().fg(foreground)));
+        spans.push(Span::styled(format!("{rvol:.1}x"), Style::default().fg(rvol_color)));
+    }
+
+    Line::from(spans)
+}
+
+fn format_compact_volume(value: u64) -> String {
+    let value = value as f64;
+    if value >= 1_000_000_000.0 {
+        format!("{:.1}B", value / 1_000_000_000.0)
+    } else if value >= 1_000_000.0 {
+        format!("{:.1}M", value / 1_000_000.0)
+    } else if value >= 1_000.0 {
+        format!("{:.0}K", value / 1_000.0)
+    } else {
+        format!("{}", value as u64)
+    }
 }
 
 fn render_market_state(frame: &mut Frame, app: &App, area: Rect) {

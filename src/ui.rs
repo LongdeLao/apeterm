@@ -13,28 +13,47 @@ use crate::{
 };
 
 pub fn render(frame: &mut Frame, app: &App) {
-    let rendered_page = match app.page {
-        Page::Agent => app.agent_background_page(),
-        page => page,
-    };
-
-    match rendered_page {
+    match app.page {
         Page::Onboarding => onboarding::render(frame, app),
         Page::Dashboard => dashboard::render(frame, app),
         Page::Search => search::render(frame, app),
         Page::Details => search::render_details(frame, app),
         Page::Settings => settings::render(frame, app),
-        Page::Agent => {}
     }
 
-    if app.page == Page::Agent {
-        agent::render(frame, app);
+    if app.agent.panel_open {
+        let [_main_area, agent_area] = split_content_area(frame.area(), app);
+        if agent_area.width > 0 {
+            frame.render_widget(
+                Paragraph::new("").style(
+                    Style::default()
+                        .bg(current_theme(app.theme_name).background.unwrap_or_default()),
+                ),
+                agent_area,
+            );
+            agent::render(frame, app, agent_area);
+        }
     }
     render_footer(frame, app);
 }
 
-pub fn content_area(area: Rect) -> Rect {
-    Rect::new(area.x, area.y, area.width, area.height.saturating_sub(1))
+pub fn content_area(area: Rect, app: &App) -> Rect {
+    split_content_area(area, app)[0]
+}
+
+pub fn split_content_area(area: Rect, app: &App) -> [Rect; 2] {
+    let content = Rect::new(area.x, area.y, area.width, area.height.saturating_sub(1));
+    if !app.agent.panel_open || content.width < 72 {
+        return [content, Rect::new(content.right(), content.y, 0, content.height)];
+    }
+
+    let agent_width = content.width.saturating_mul(32) / 100;
+    let agent_width = agent_width.clamp(36, 44).min(content.width.saturating_sub(24));
+    let main_width = content.width.saturating_sub(agent_width);
+    [
+        Rect::new(content.x, content.y, main_width, content.height),
+        Rect::new(content.x + main_width, content.y, agent_width, content.height),
+    ]
 }
 
 fn render_footer(frame: &mut Frame, app: &App) {
@@ -89,7 +108,9 @@ fn footer_text(app: &App) -> String {
     match app.page {
         Page::Search => app.t(Key::SearchFooter).to_string(),
         Page::Settings => app.t(Key::SettingsFooter).to_string(),
-        Page::Agent => app.t(Key::AgentFooter).to_string(),
+        _ if app.is_text_input_target(crate::app::InputTarget::Agent) => {
+            app.t(Key::AgentFooter).to_string()
+        }
         Page::Dashboard
             if app.focused_panel == PanelId::Watchlist
                 && app.panel_content(PanelId::Watchlist) == WindowKind::Watchlist =>

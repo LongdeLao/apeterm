@@ -10,8 +10,8 @@ use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ai::client::LlmClient,
-    config::{AppConfig, LlmConfig, NamedWatchlist},
+    agent::AgentController,
+    config::{AppConfig, NamedWatchlist},
     db,
     i18n::{I18n, Key, Locale},
     market::{MarketEvent, MarketSession},
@@ -34,7 +34,6 @@ pub enum Page {
     Search,
     Details,
     Settings,
-    Agent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,26 +205,6 @@ pub struct NotesDraft {
     pub body: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentRole {
-    User,
-    Assistant,
-}
-
-#[derive(Debug, Clone)]
-pub struct AgentMessage {
-    pub role: AgentRole,
-    pub content: String,
-}
-
-#[derive(Debug)]
-enum AgentEvent {
-    Status(String),
-    Chunk(String),
-    Done,
-    Error(String),
-}
-
 #[derive(Debug)]
 enum NewsEvent {
     Loaded { result: FetchResult, done: bool },
@@ -318,16 +297,8 @@ pub struct App {
     sec_receiver: Option<Receiver<SecEvent>>,
     last_sec_refresh: Option<Instant>,
     financial_juice_cooldown_until: Option<Instant>,
-    pub agent_input: String,
-    pub agent_messages: Vec<AgentMessage>,
-    pub agent_loading: bool,
-    pub agent_status: Option<String>,
-    pub agent_scroll: u16,
-    pub agent_auto_scroll: bool,
-    agent_response_receiver: Option<Receiver<AgentEvent>>,
+    pub agent: AgentController,
     news_receiver: Option<Receiver<NewsEvent>>,
-    agent_previous_page: Page,
-    llm_config: LlmConfig,
     config: AppConfig,
 }
 
@@ -415,16 +386,8 @@ impl App {
             sec_receiver: None,
             last_sec_refresh: None,
             financial_juice_cooldown_until: None,
-            agent_input: String::new(),
-            agent_messages: Vec::new(),
-            agent_loading: false,
-            agent_status: None,
-            agent_scroll: 0,
-            agent_auto_scroll: true,
-            agent_response_receiver: None,
+            agent: AgentController::new(&config.llm),
             news_receiver: None,
-            agent_previous_page: Page::Dashboard,
-            llm_config: config.llm.clone(),
             config,
         }
     }
@@ -574,8 +537,6 @@ impl App {
             } else {
                 self.page = Page::Dashboard;
             }
-        } else if self.page == Page::Agent {
-            self.close_agent();
         } else if self.is_editing_watchlist() {
             self.close_watchlist_editor();
         }
@@ -729,28 +690,25 @@ impl App {
         self.selected_news = None;
     }
 
+    /// Opens the agent panel if closed; focuses its input either way.
     pub fn open_agent(&mut self) {
-        if self.page != Page::Agent {
-            self.agent_previous_page = self.page;
-        }
+        self.agent.panel_open = true;
         self.begin_text_input(InputTarget::Agent);
-        self.page = Page::Agent;
         self.show_help = false;
         self.pending_split = false;
         self.watchlist_editor = None;
-        self.agent_auto_scroll = true;
+        self.agent.auto_scroll = true;
     }
 
     pub fn close_agent(&mut self) {
-        self.mode = AppMode::Normal;
-        self.page = self.agent_previous_page;
-        self.agent_loading = false;
-        self.agent_response_receiver = None;
-        self.agent_status = None;
+        if self.is_text_input_target(InputTarget::Agent) {
+            self.mode = AppMode::Normal;
+        }
+        self.agent.panel_open = false;
     }
 
-    pub fn agent_background_page(&self) -> Page {
-        self.agent_previous_page
+    pub fn agent_panel_open(&self) -> bool {
+        self.agent.panel_open
     }
 
     pub fn begin_text_input(&mut self, target: InputTarget) {
@@ -771,7 +729,11 @@ impl App {
 
     pub fn cancel_text_input(&mut self) {
         match self.mode {
-            AppMode::TextInput(InputTarget::Agent) => self.close_agent(),
+            // Esc blurs the agent input but keeps the panel open; a second
+            // Esc (handled in event.rs) closes the panel.
+            AppMode::TextInput(InputTarget::Agent) => {
+                self.clear_text_input_mode();
+            }
             AppMode::TextInput(InputTarget::Search) => self.clear_text_input_mode(),
             AppMode::TextInput(InputTarget::ResetConfirmation) => {
                 self.reset_confirmation = None;
@@ -830,7 +792,7 @@ impl App {
         }
 
         match self.mode {
-            AppMode::TextInput(InputTarget::Agent) => self.agent_input.push(character),
+            AppMode::TextInput(InputTarget::Agent) => self.agent.input.push(character),
             AppMode::TextInput(InputTarget::Search) => {
                 self.search_query.push(character);
                 self.reset_search_window();
@@ -869,7 +831,7 @@ impl App {
     pub fn pop_text_input_char(&mut self) {
         match self.mode {
             AppMode::TextInput(InputTarget::Agent) => {
-                self.agent_input.pop();
+                self.agent.input.pop();
             }
             AppMode::TextInput(InputTarget::Search) => {
                 self.search_query.pop();
@@ -908,71 +870,9 @@ impl App {
         }
     }
 
-    pub fn push_agent_char(&mut self, character: char) {
-        if character.is_control() {
-            return;
-        }
-        self.agent_input.push(character);
-    }
-
-    pub fn pop_agent_char(&mut self) {
-        self.agent_input.pop();
-    }
-
     pub fn send_agent_message(&mut self) {
-        if self.agent_loading {
-            return;
-        }
-
-        let prompt = self.agent_input.trim().to_string();
-        if prompt.is_empty() {
-            return;
-        }
-
-        self.agent_messages.push(AgentMessage {
-            role: AgentRole::User,
-            content: prompt.clone(),
-        });
-        self.agent_messages.push(AgentMessage {
-            role: AgentRole::Assistant,
-            content: String::new(),
-        });
-        self.agent_input.clear();
-        self.agent_loading = true;
-        self.agent_status = Some("debug: preparing request".to_string());
-        self.agent_auto_scroll = true;
-
-        let llm_config = self.llm_config.clone();
-        let (sender, receiver) = mpsc::channel();
-        self.agent_response_receiver = Some(receiver);
-        thread::spawn(move || match llm_config.api_key {
-            Some(api_key) if !api_key.trim().is_empty() => {
-                let _ = sender.send(AgentEvent::Status("debug: connecting".to_string()));
-                let result = LlmClient::new(llm_config.base_url, api_key, llm_config.model)
-                    .chat_stream(
-                        &prompt,
-                        |chunk| {
-                            let _ = sender.send(AgentEvent::Chunk(chunk));
-                        },
-                        |status| {
-                            let _ = sender.send(AgentEvent::Status(status));
-                        },
-                    );
-                match result {
-                    Ok(()) => {
-                        let _ = sender.send(AgentEvent::Done);
-                    }
-                    Err(error) => {
-                        let _ = sender.send(AgentEvent::Error(error));
-                    }
-                }
-            }
-            _ => {
-                let _ = sender.send(AgentEvent::Error(
-                    "missing LLM_API_KEY / OPENROUTER_API_KEY".to_string(),
-                ));
-            }
-        });
+        let context = crate::agent::context::build_context(self);
+        self.agent.submit(&context);
     }
 
     pub fn move_search_selection(&mut self, direction: SelectionDirection) {
@@ -1056,77 +956,31 @@ impl App {
         });
     }
 
+    /// Drives the agent turn: when the model requested a tool, execute it
+    /// against the app and feed the result back into the conversation.
     pub fn poll_agent_response(&mut self) {
-        let Some(receiver) = &self.agent_response_receiver else {
-            return;
-        };
-
-        loop {
-            match receiver.try_recv() {
-                Ok(AgentEvent::Status(status)) => {
-                    self.agent_status = Some(status);
-                }
-                Ok(AgentEvent::Chunk(content)) => {
-                    if let Some(message) = self
-                        .agent_messages
-                        .iter_mut()
-                        .rev()
-                        .find(|message| message.role == AgentRole::Assistant)
-                    {
-                        message.content.push_str(&content);
-                    }
-                    self.agent_status = Some("debug: receiving chunks".to_string());
-                    if self.agent_auto_scroll {
-                        self.agent_scroll = u16::MAX;
-                    }
-                }
-                Ok(AgentEvent::Done) => {
-                    self.agent_loading = false;
-                    self.agent_status = Some("debug: stream completed".to_string());
-                    self.agent_response_receiver = None;
-                    break;
-                }
-                Ok(AgentEvent::Error(error)) => {
-                    if self.agent_messages.last().is_some_and(|message| {
-                        message.role == AgentRole::Assistant && message.content.is_empty()
-                    }) {
-                        self.agent_messages.pop();
-                    }
-                    self.agent_loading = false;
-                    self.agent_status = Some(error);
-                    self.agent_response_receiver = None;
-                    break;
-                }
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.agent_loading = false;
-                    self.agent_status = Some("request interrupted".to_string());
-                    self.agent_response_receiver = None;
-                    break;
-                }
-            }
+        while let Some(call) = self.agent.poll() {
+            let result = crate::agent::tools::execute(self, call);
+            self.agent.push_tool_result(result);
         }
     }
 
     pub fn move_agent_scroll(&mut self, direction: SelectionDirection) {
-        self.agent_auto_scroll = false;
-        self.agent_scroll = match direction {
-            SelectionDirection::Previous => self.agent_scroll.saturating_sub(1),
-            SelectionDirection::Next => self.agent_scroll.saturating_add(1),
-        };
+        self.agent.scroll_by(match direction {
+            SelectionDirection::Previous => -1,
+            SelectionDirection::Next => 1,
+        });
     }
 
     pub fn page_agent_scroll(&mut self, direction: SelectionDirection) {
-        self.agent_auto_scroll = false;
-        self.agent_scroll = match direction {
-            SelectionDirection::Previous => self.agent_scroll.saturating_sub(6),
-            SelectionDirection::Next => self.agent_scroll.saturating_add(6),
-        };
+        self.agent.scroll_by(match direction {
+            SelectionDirection::Previous => -6,
+            SelectionDirection::Next => 6,
+        });
     }
 
     pub fn stick_agent_scroll_to_bottom(&mut self) {
-        self.agent_auto_scroll = true;
-        self.agent_scroll = u16::MAX;
+        self.agent.stick_scroll_to_bottom();
     }
 
     pub fn toggle_search_asset_kind(&mut self) {
@@ -2431,6 +2285,106 @@ impl App {
         let _ = self.config.save();
     }
 
+    pub fn agent_create_watchlist(&mut self, name: &str) -> Result<String, String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("watchlist name must not be empty".to_string());
+        }
+        if self
+            .config
+            .watchlist
+            .lists
+            .iter()
+            .any(|list| list.name.eq_ignore_ascii_case(name))
+        {
+            return Err(format!("watchlist `{name}` already exists"));
+        }
+
+        self.config.watchlist.lists.push(NamedWatchlist {
+            name: name.to_string(),
+            crypto_symbols: Vec::new(),
+            stock_symbols: Vec::new(),
+            display_names: std::collections::HashMap::new(),
+        });
+        self.config.watchlist.active = self.config.watchlist.lists.len() - 1;
+        self.retain_configured_quotes();
+        self.clamp_watchlist_selection();
+        self.request_market_refresh();
+        let _ = self.config.save();
+        Ok(format!("created watchlist `{name}` and made it active"))
+    }
+
+    pub fn agent_add_symbol_to_watchlist(&mut self, symbol: &str) -> Result<String, String> {
+        let Some(symbol) = normalize_symbol(symbol) else {
+            return Err("symbol must not be empty".to_string());
+        };
+
+        let kind = if symbol.contains('-') {
+            WatchlistKind::Crypto
+        } else {
+            WatchlistKind::Stock
+        };
+        let list = self.watchlist_mut(kind);
+        if list.contains(&symbol) {
+            return Err(format!("{symbol} is already on the active watchlist"));
+        }
+        list.push(symbol.clone());
+        list.sort();
+
+        self.retain_configured_quotes();
+        self.request_market_refresh();
+        let _ = self.config.save();
+        Ok(format!("added {symbol} to the active watchlist"))
+    }
+
+    pub fn agent_remove_symbol_from_watchlist(&mut self, symbol: &str) -> Result<String, String> {
+        let Some(symbol) = normalize_symbol(symbol) else {
+            return Err("symbol must not be empty".to_string());
+        };
+
+        let mut removed = false;
+        for kind in [WatchlistKind::Stock, WatchlistKind::Crypto] {
+            let list = self.watchlist_mut(kind);
+            let before = list.len();
+            list.retain(|existing| !existing.eq_ignore_ascii_case(&symbol));
+            removed |= list.len() != before;
+        }
+        if !removed {
+            return Err(format!("{symbol} is not on the active watchlist"));
+        }
+
+        self.cleanup_watchlist_aliases();
+        self.clamp_watchlist_selection();
+        self.retain_configured_quotes();
+        self.request_market_refresh();
+        let _ = self.config.save();
+        Ok(format!("removed {symbol} from the active watchlist"))
+    }
+
+    pub fn agent_open_symbol(&mut self, symbol: &str) -> Result<String, String> {
+        let Some(symbol) = normalize_symbol(symbol) else {
+            return Err("symbol must not be empty".to_string());
+        };
+
+        match crate::db::open(&self.ticker_db_path)
+            .and_then(|connection| search::details(&connection, &symbol))
+        {
+            Ok(Some(details)) => {
+                self.selected_details = Some(details);
+                self.selected_live_details = None;
+                self.live_details_loading = false;
+                self.page = Page::Details;
+                self.search_message = None;
+                self.selected_news = None;
+                self.show_help = false;
+                self.spawn_live_details_fetch(symbol.clone());
+                Ok(format!("opened details for {symbol}"))
+            }
+            Ok(None) => Err(format!("symbol {symbol} not found in the local ticker db")),
+            Err(error) => Err(format!("lookup failed: {error}")),
+        }
+    }
+
     fn watchlist_mut(&mut self, kind: WatchlistKind) -> &mut Vec<String> {
         match kind {
             WatchlistKind::Stock => &mut self.active_watchlist_mut().stock_symbols,
@@ -2540,7 +2494,6 @@ impl App {
     fn reset_settings_to_defaults(&mut self) {
         let config = AppConfig::default().unwrap_or_else(|_| <AppConfig as Default>::default());
         self.config = config.clone();
-        self.llm_config = config.llm.clone();
         let locale = config.locale.clone();
         self.locale = locale.clone();
         self.i18n.set_active(locale);
@@ -2566,11 +2519,7 @@ impl App {
         self.last_news_refresh = None;
         self.financial_juice_cooldown_until = None;
         self.news_receiver = None;
-        self.agent_input.clear();
-        self.agent_messages.clear();
-        self.agent_loading = false;
-        self.agent_status = None;
-        self.agent_response_receiver = None;
+        self.agent = AgentController::new(&self.config.llm);
         self.notes_tab = NotesFilterTab::All;
         self.notes_selection = 0;
         self.notes_scroll = 0;

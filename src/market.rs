@@ -27,6 +27,8 @@ pub enum MarketEvent {
         symbol: String,
         price: f64,
         price_change_percent: f64,
+        day_volume: Option<u64>,
+        avg_volume: Option<u64>,
         market_session: MarketSession,
     },
 }
@@ -203,6 +205,8 @@ fn parse_stock_message(text: &str) -> Option<MarketEvent> {
         .get("price_change_percent")
         .and_then(Value::as_f64)
         .unwrap_or_default();
+    let day_volume = value.get("day_volume").and_then(Value::as_u64);
+    let avg_volume = value.get("avg_volume").and_then(Value::as_u64);
     let market_session = value
         .get("market_state")
         .and_then(Value::as_str)
@@ -212,6 +216,8 @@ fn parse_stock_message(text: &str) -> Option<MarketEvent> {
         symbol,
         price,
         price_change_percent,
+        day_volume,
+        avg_volume,
         market_session,
     })
 }

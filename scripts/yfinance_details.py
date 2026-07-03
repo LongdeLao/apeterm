@@ -86,11 +86,14 @@ def main():
     result = {
         "price": None,
         "previous_close": None,
+        "day_volume": None,
         "open": None,
         "day_high": None,
         "day_low": None,
         "market_cap": None,
         "avg_volume": None,
+        "extended_price": None,
+        "extended_change_percent": None,
         "week_52_high": None,
         "week_52_low": None,
         "trailing_pe": None,
@@ -100,8 +103,11 @@ def main():
         "next_earnings_days": None,
         "summary": None,
         "summary_de": None,
+        "city": None,
+        "state": None,
         "country": None,
         "website": None,
+        "full_time_employees": None,
         "history": [],
     }
 
@@ -120,6 +126,7 @@ def main():
         result["avg_volume"] = number(
             pick(fast, ["three_month_average_volume", "threeMonthAverageVolume"])
         )
+        result["day_volume"] = number(pick(fast, ["last_volume", "lastVolume", "regularMarketVolume"]))
         result["week_52_high"] = number(pick(fast, ["year_high", "yearHigh"]))
         result["week_52_low"] = number(pick(fast, ["year_low", "yearLow"]))
         result["open"] = number(pick(fast, ["open", "regularMarketOpen"]))
@@ -145,6 +152,14 @@ def main():
         info = ticker.info
         result["market_cap"] = result["market_cap"] or number(info.get("marketCap"))
         result["avg_volume"] = result["avg_volume"] or number(info.get("averageVolume"))
+        result["day_volume"] = result["day_volume"] or number(
+            info.get("volume") or info.get("regularMarketVolume")
+        )
+        result["extended_price"] = number(
+            info.get("postMarketPrice")
+            or info.get("preMarketPrice")
+            or info.get("postMarketPrice")
+        )
         result["week_52_high"] = result["week_52_high"] or number(info.get("fiftyTwoWeekHigh"))
         result["week_52_low"] = result["week_52_low"] or number(info.get("fiftyTwoWeekLow"))
         result["open"] = result["open"] or number(info.get("open") or info.get("regularMarketOpen"))
@@ -158,10 +173,17 @@ def main():
             info.get("earningsTimestamp")
             or info.get("earningsTimestampStart")
         )
+        result["city"] = info.get("city")
+        result["state"] = info.get("state")
         result["country"] = info.get("country")
         result["website"] = info.get("website")
+        result["full_time_employees"] = number(info.get("fullTimeEmployees"))
         result["summary"] = two_sentence_summary(info.get("longBusinessSummary", ""))
         result["summary_de"] = translate_to_german(result["summary"])
+        if result["extended_price"] is not None and result["price"] not in (None, 0):
+            result["extended_change_percent"] = (
+                (result["extended_price"] - result["price"]) / result["price"]
+            ) * 100
     except Exception:
         pass
 

@@ -16,7 +16,7 @@ use crate::{
 
 pub fn render(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
-    let area = ui::content_area(frame.area());
+    let area = ui::content_area(frame.area(), app);
     if let Some(background) = theme.background {
         frame.render_widget(Fill::new(background), area);
     }

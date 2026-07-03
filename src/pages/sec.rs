@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Sparkline, Table, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
 };
 
 use crate::{
@@ -241,36 +241,128 @@ fn render_institution_detail(
     let theme = current_theme(app.theme_name);
     let sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(4), Constraint::Length(2), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Length(6),
+            Constraint::Min(0),
+        ])
         .split(area);
 
     render_detail_header(frame, app, sections[0], connection, entity);
 
     let history = db::sec_repo::portfolio_value_history(connection, entity.id).unwrap_or_default();
-    let values = history
+    let current_total = history
+        .last()
+        .map(|(_, value)| thirteenf_value_to_usd(*value))
+        .unwrap_or(0.0);
+    let previous_total = history
         .iter()
-        .map(|(_, value)| (*value as u64).max(1))
-        .collect::<Vec<_>>();
-    frame.render_widget(
-        Sparkline::default()
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" portfolio value ")
-                    .border_style(Style::default().fg(theme.muted)),
-            )
-            .data(&values)
-            .style(Style::default().fg(theme.positive)),
-        sections[1],
-    );
+        .rev()
+        .nth(1)
+        .map(|(_, value)| thirteenf_value_to_usd(*value));
+    let total_change = previous_total
+        .filter(|value| *value > 0.0)
+        .map(|value| (current_total - value) / value * 100.0);
 
     let holdings = db::sec_repo::latest_holdings(connection, entity.id).unwrap_or_default();
     let deltas = db::sec_repo::holding_deltas(connection, entity.id).unwrap_or_default();
     let delta_map = deltas
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|delta| (delta.cusip.clone(), delta))
         .collect::<std::collections::HashMap<_, _>>();
     let total = holdings.iter().map(|row| row.value_usd).sum::<i64>().max(1) as f64;
+    let summary = summarize_holding_deltas(&deltas);
+    let top_10_weight = holdings
+        .iter()
+        .take(10)
+        .map(|row| row.value_usd as f64 / total * 100.0)
+        .sum::<f64>();
+    let largest_position = holdings.first().map(|row| {
+        format!(
+            "{} {:>4.1}%",
+            row.ticker.clone().unwrap_or_else(|| row.cusip.clone()),
+            row.value_usd as f64 / total * 100.0
+        )
+    });
+
+    let summary_lines = vec![
+        Line::from(vec![
+            Span::styled("13F value ", Style::default().fg(theme.muted)),
+            Span::styled(
+                format_currency(current_total),
+                Style::default().fg(theme.foreground).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled("Positions ", Style::default().fg(theme.muted)),
+            Span::styled(
+                holdings.len().to_string(),
+                Style::default().fg(theme.foreground).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled("QoQ ", Style::default().fg(theme.muted)),
+            Span::styled(
+                total_change
+                    .map(|value| format!("{value:+.1}%"))
+                    .unwrap_or_else(|| "-".to_string()),
+                Style::default().fg(match total_change {
+                    Some(value) if value > 0.0 => theme.positive,
+                    Some(value) if value < 0.0 => NEGATIVE,
+                    _ => theme.muted,
+                }),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Largest ", Style::default().fg(theme.muted)),
+            Span::styled(
+                largest_position.unwrap_or_else(|| "-".to_string()),
+                Style::default().fg(theme.foreground),
+            ),
+            Span::raw("  "),
+            Span::styled("Top 10 ", Style::default().fg(theme.muted)),
+            Span::styled(
+                format!("{top_10_weight:.1}%"),
+                Style::default().fg(theme.foreground),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Top add ", Style::default().fg(theme.muted)),
+            Span::styled(
+                summary.top_add.unwrap_or_else(|| "-".to_string()),
+                Style::default().fg(theme.positive),
+            ),
+            Span::raw("  "),
+            Span::styled("Top cut ", Style::default().fg(theme.muted)),
+            Span::styled(
+                summary.top_cut.unwrap_or_else(|| "-".to_string()),
+                Style::default().fg(NEGATIVE),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("New ", Style::default().fg(theme.muted)),
+            Span::styled(
+                summary.bought.join(", ").if_empty_then("-"),
+                Style::default().fg(theme.foreground),
+            ),
+            Span::raw("  "),
+            Span::styled("Exited ", Style::default().fg(theme.muted)),
+            Span::styled(
+                summary.sold.join(", ").if_empty_then("-"),
+                Style::default().fg(theme.foreground),
+            ),
+        ]),
+    ];
+    frame.render_widget(
+        Paragraph::new(summary_lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" 13f summary ")
+                    .border_style(Style::default().fg(theme.muted)),
+            )
+            .wrap(Wrap { trim: true }),
+        sections[1],
+    );
 
     let rows = holdings.into_iter().map(|row| {
         let delta = delta_map.get(&row.cusip);
@@ -291,7 +383,7 @@ fn render_institution_detail(
         Row::new(vec![
             Cell::from(row.ticker.unwrap_or_else(|| row.cusip.clone())),
             Cell::from(format_compact_number(row.shares as f64)),
-            Cell::from(format_currency(row.value_usd as f64)),
+            Cell::from(format_currency(thirteenf_value_to_usd(row.value_usd))),
             Cell::from(Line::from(Span::styled(delta_text, delta_style))),
             Cell::from(format!("{:>5.1}%", row.value_usd as f64 / total * 100.0)),
         ])
@@ -523,6 +615,9 @@ fn parse_relative_time(value: &str) -> Option<String> {
 }
 
 fn format_currency(value: f64) -> String {
+    if value.abs() >= 1_000_000_000_000.0 {
+        format!("${:.1}T", value / 1_000_000_000_000.0)
+    } else
     if value.abs() >= 1_000_000_000.0 {
         format!("${:.1}B", value / 1_000_000_000.0)
     } else if value.abs() >= 1_000_000.0 {
@@ -532,6 +627,10 @@ fn format_currency(value: f64) -> String {
     } else {
         format!("${value:.2}")
     }
+}
+
+fn thirteenf_value_to_usd(value: i64) -> f64 {
+    value as f64 * 1_000.0
 }
 
 fn format_compact_number(value: f64) -> String {
@@ -549,4 +648,68 @@ fn format_compact_number(value: f64) -> String {
 fn pad_right(value: &str, width: usize) -> String {
     let used = value.chars().count();
     format!("{value}{}", " ".repeat(width.saturating_sub(used)))
+}
+
+#[derive(Default)]
+struct HoldingDeltaSummary {
+    top_add: Option<String>,
+    top_cut: Option<String>,
+    bought: Vec<String>,
+    sold: Vec<String>,
+}
+
+fn summarize_holding_deltas(deltas: &[crate::sec::types::HoldingDelta]) -> HoldingDeltaSummary {
+    let mut top_add: Option<(&str, i64)> = None;
+    let mut top_cut: Option<(&str, i64)> = None;
+    let mut bought = Vec::new();
+    let mut sold = Vec::new();
+
+    for delta in deltas {
+        let label = delta.ticker.as_deref().unwrap_or(delta.cusip.as_str());
+        let share_delta = delta.current_shares - delta.previous_shares;
+        match delta.kind {
+            HoldingDeltaKind::New => {
+                if bought.len() < 3 {
+                    bought.push(label.to_string());
+                }
+            }
+            HoldingDeltaKind::Exited => {
+                if sold.len() < 3 {
+                    sold.push(label.to_string());
+                }
+            }
+            HoldingDeltaKind::Increased => {
+                if top_add.is_none_or(|(_, value)| share_delta > value) {
+                    top_add = Some((label, share_delta));
+                }
+            }
+            HoldingDeltaKind::Decreased => {
+                if top_cut.is_none_or(|(_, value)| share_delta < value) {
+                    top_cut = Some((label, share_delta));
+                }
+            }
+            HoldingDeltaKind::Unchanged => {}
+        }
+    }
+
+    HoldingDeltaSummary {
+        top_add: top_add.map(|(label, value)| format!("{label} +{}", format_compact_number(value as f64))),
+        top_cut: top_cut.map(|(label, value)| format!("{label} {}", format_compact_number(value as f64))),
+        bought,
+        sold,
+    }
+}
+
+trait EmptyFallback {
+    fn if_empty_then(self, fallback: &str) -> String;
+}
+
+impl EmptyFallback for String {
+    fn if_empty_then(self, fallback: &str) -> String {
+        if self.is_empty() {
+            fallback.to_string()
+        } else {
+            self
+        }
+    }
 }

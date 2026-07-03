@@ -32,12 +32,19 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
             if !is_control
                 && !app.is_editing_watchlist()
                 && app.page != Page::Search
-                && app.page != Page::Agent
                 && (app.page != Page::Settings || app.reset_confirmation.is_none()) =>
         {
             app.should_quit = true
         }
-        KeyCode::Esc => app.close_help(),
+        // With the agent input already blurred, Esc closes the panel before
+        // falling back to the usual back-navigation.
+        KeyCode::Esc => {
+            if app.agent_panel_open() && !app.show_help {
+                app.close_agent();
+            } else {
+                app.close_help();
+            }
+        }
         KeyCode::Char('?') => {
             if app.page == Page::Dashboard {
                 app.toggle_help();
@@ -60,8 +67,6 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
                 app.open_selected_details();
             } else if app.page == Page::Settings {
                 app.activate_settings_item();
-            } else if app.page == Page::Agent {
-                app.send_agent_message();
             }
         }
         _ => match app.page {
@@ -70,13 +75,12 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
             Page::Search => handle_search_key(app, key_code),
             Page::Details => {}
             Page::Settings => handle_settings_key(app, key_code),
-            Page::Agent => handle_agent_key(app, key_code),
         },
     }
 }
 
 fn can_open_agent(app: &App) -> bool {
-    app.page != Page::Agent && !app.is_text_input_active()
+    !app.is_text_input_active()
 }
 
 fn handle_onboarding_key(app: &mut App, key_code: KeyCode) {
@@ -304,19 +308,6 @@ fn handle_sec_key(app: &mut App, key_code: KeyCode) -> bool {
     }
 }
 
-fn handle_agent_key(app: &mut App, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Up => app.move_agent_scroll(SelectionDirection::Previous),
-        KeyCode::Down => app.move_agent_scroll(SelectionDirection::Next),
-        KeyCode::PageUp => app.page_agent_scroll(SelectionDirection::Previous),
-        KeyCode::PageDown => app.page_agent_scroll(SelectionDirection::Next),
-        KeyCode::End => app.stick_agent_scroll_to_bottom(),
-        KeyCode::Enter => app.send_agent_message(),
-        KeyCode::Backspace => app.pop_agent_char(),
-        KeyCode::Char(character) => app.push_agent_char(character),
-        _ => {}
-    }
-}
 
 fn handle_text_input_key(
     app: &mut App,
@@ -356,6 +347,26 @@ fn handle_text_input_key(
         }
         KeyCode::Char(character) => {
             app.push_text_input_char(character);
+            true
+        }
+        KeyCode::Up if target == InputTarget::Agent => {
+            app.move_agent_scroll(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::Down if target == InputTarget::Agent => {
+            app.move_agent_scroll(SelectionDirection::Next);
+            true
+        }
+        KeyCode::PageUp if target == InputTarget::Agent => {
+            app.page_agent_scroll(SelectionDirection::Previous);
+            true
+        }
+        KeyCode::PageDown if target == InputTarget::Agent => {
+            app.page_agent_scroll(SelectionDirection::Next);
+            true
+        }
+        KeyCode::End if target == InputTarget::Agent => {
+            app.stick_agent_scroll_to_bottom();
             true
         }
         KeyCode::Up if target == InputTarget::Watchlist => {

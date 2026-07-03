@@ -17,7 +17,7 @@ use crate::{
 
 pub fn render(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
-    let area = ui::content_area(frame.area());
+    let area = ui::content_area(frame.area(), app);
     if let Some(background) = theme.background {
         frame.render_widget(Fill::new(background), area);
     }
@@ -143,7 +143,7 @@ fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String, bool)> {
 fn render_reset_confirmation(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
     let background = theme.background.unwrap_or(Color::Black);
-    let area = centered_rect(ui::content_area(frame.area()), 64, 9);
+    let area = centered_rect(ui::content_area(frame.area(), app), 64, 9);
     let input = app
         .reset_confirmation
         .as_ref()

@@ -1,7 +1,7 @@
 use std::time::Duration;
 use std::{error::Error, io};
 
-mod ai;
+mod agent;
 mod app;
 mod config;
 mod db;
