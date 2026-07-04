@@ -34,6 +34,10 @@ pub fn render(frame: &mut Frame, app: &App) {
         }
     }
 
+    if app.show_help {
+        dashboard::render_help(frame, app);
+    }
+
     if app.spotlight.open {
         spotlight::render(frame, app);
     }

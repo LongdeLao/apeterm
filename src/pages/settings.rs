@@ -113,24 +113,32 @@ fn render_rows(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String, bool, bool)> {
+    SettingsItem::ALL
+        .iter()
+        .copied()
+        .map(|item| settings_row(app, item))
+        .collect()
+}
+
+fn settings_row(app: &App, item: SettingsItem) -> (SettingsItem, String, String, bool, bool) {
     let preset = app.active_preference_preset();
-    vec![
-        (
-            SettingsItem::ApePreset,
+    match item {
+        SettingsItem::ApePreset => (
+            item,
             app.t(Key::SettingsRowPresetApe).to_string(),
             preset_value(app, preset == PreferencePreset::Ape),
             false,
             preset == PreferencePreset::Ape,
         ),
-        (
-            SettingsItem::ProPreset,
+        SettingsItem::ProPreset => (
+            item,
             app.t(Key::SettingsRowPresetPro).to_string(),
             preset_value(app, preset == PreferencePreset::Pro),
             false,
             preset == PreferencePreset::Pro,
         ),
-        (
-            SettingsItem::CustomPreset,
+        SettingsItem::CustomPreset => (
+            item,
             app.t(Key::SettingsRowPresetCustom).to_string(),
             if preset == PreferencePreset::Custom {
                 app.t(Key::SettingsValueCustom).to_string()
@@ -140,50 +148,50 @@ fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String, bool, bool)> {
             false,
             preset == PreferencePreset::Custom,
         ),
-        (
-            SettingsItem::Experience,
+        SettingsItem::Experience => (
+            item,
             app.t(Key::SettingsRowExperience).to_string(),
             experience_label(app, app.preferences.experience),
             true,
             false,
         ),
-        (
-            SettingsItem::Tone,
+        SettingsItem::Tone => (
+            item,
             app.t(Key::SettingsRowTone).to_string(),
             tone_label(app, app.preferences.tone),
             true,
             false,
         ),
-        (
-            SettingsItem::Explanations,
+        SettingsItem::Explanations => (
+            item,
             app.t(Key::SettingsRowExplanations).to_string(),
             explanation_label(app, app.preferences.explanations),
             true,
             false,
         ),
-        (
-            SettingsItem::AgentStyle,
+        SettingsItem::AgentStyle => (
+            item,
             app.t(Key::SettingsRowAgentStyle).to_string(),
             agent_style_label(app, app.preferences.agent_style),
             true,
             false,
         ),
-        (
-            SettingsItem::Language,
+        SettingsItem::Language => (
+            item,
             app.t(Key::SettingsRowLanguage).to_string(),
             language_label(app, app.preferences.language),
             true,
             false,
         ),
-        (
-            SettingsItem::Theme,
+        SettingsItem::Theme => (
+            item,
             app.t(Key::SettingsRowTheme).to_string(),
             app.t(app.theme_name.label_key()).to_string(),
             true,
             false,
         ),
-        (
-            SettingsItem::Onboarding,
+        SettingsItem::Onboarding => (
+            item,
             app.t(Key::SettingsRowOnboarding).to_string(),
             if app.onboarding_complete {
                 app.t(Key::SettingsValueOff).to_string()
@@ -193,14 +201,14 @@ fn settings_rows(app: &App) -> Vec<(SettingsItem, String, String, bool, bool)> {
             true,
             false,
         ),
-        (
-            SettingsItem::Reset,
+        SettingsItem::Reset => (
+            item,
             app.t(Key::SettingsSectionDanger).to_string(),
             app.t(Key::SettingsRowReset).to_string(),
             false,
             false,
         ),
-    ]
+    }
 }
 
 fn preset_value(app: &App, active: bool) -> String {

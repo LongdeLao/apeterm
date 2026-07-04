@@ -28,10 +28,6 @@ pub fn render(frame: &mut Frame, app: &App) {
     render_panel(frame, app, geometry.calendar, PanelId::Calendar);
     render_panel(frame, app, geometry.notes, PanelId::Notes);
     render_dividers(frame, app, &geometry);
-
-    if app.show_help {
-        render_help(frame, app);
-    }
 }
 
 fn render_panel(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
@@ -238,7 +234,7 @@ fn vertical_line(height: u16) -> Vec<Line<'static>> {
     (0..height).map(|_| Line::from("│")).collect()
 }
 
-fn render_help(frame: &mut Frame, app: &App) {
+pub(crate) fn render_help(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
     let area = centered_rect(frame.area(), 50, 17);
     let text = [

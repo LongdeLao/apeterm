@@ -35,13 +35,59 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
         }
     }
 
-    if key_code == KeyCode::Char('a') && !is_control && can_open_agent(app) {
+    // The dashboard help overlay owns the keyboard while open: only its own
+    // toggle key and Esc (handled below) may dismiss it. This runs before the
+    // page dispatch so the overlay behaves the same regardless of which page
+    // it was opened from.
+    if app.show_help && key_code != KeyCode::Char('?') && key_code != KeyCode::Esc {
+        return;
+    }
+
+    if key_code == KeyCode::Char('a')
+        && !is_control
+        && app.page != Page::Onboarding
+        && can_open_agent(app)
+    {
         app.open_agent();
         return;
     }
-    if key_code == KeyCode::Char('E') && !is_control {
+    if key_code == KeyCode::Char('E') && !is_control && app.page != Page::Onboarding {
         app.cycle_experience();
         return;
+    }
+
+    // Global navigation shortcuts: available from any page except while a
+    // sub-modal already owns the keyboard (watchlist editor, pending split,
+    // window picker, note-delete confirmation) or during onboarding. This
+    // keeps `,`/`/`/`?`/`g` from being stranded behind whichever page
+    // happened to define them first.
+    if !blocks_global_shortcuts(app) && app.page != Page::Onboarding {
+        match key_code {
+            KeyCode::Char(',') if !is_control => {
+                app.open_settings();
+                return;
+            }
+            // On Dashboard, `/` with the Notes panel focused means "search
+            // notes" (handled by handle_notes_key below), not "open Search".
+            KeyCode::Char('/')
+                if !is_control
+                    && app.page != Page::Search
+                    && !(app.page == Page::Dashboard
+                        && app.panel_content(app.focused_panel) == WindowKind::Notes) =>
+            {
+                app.open_search();
+                return;
+            }
+            KeyCode::Char('?') => {
+                app.toggle_help();
+                return;
+            }
+            KeyCode::Char('g') if !is_control => {
+                app.toggle_locale();
+                return;
+            }
+            _ => {}
+        }
     }
 
     match key_code {
@@ -61,11 +107,6 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
                 app.close_agent();
             } else {
                 app.close_help();
-            }
-        }
-        KeyCode::Char('?') => {
-            if app.page == Page::Dashboard {
-                app.toggle_help();
             }
         }
         KeyCode::Enter => {
@@ -101,6 +142,17 @@ fn can_open_agent(app: &App) -> bool {
     !app.is_text_input_active()
 }
 
+/// True while a page-local sub-mode has claimed the keyboard for its own
+/// purposes (picking a watchlist row, choosing a split direction, picking a
+/// window's content, confirming a note delete) — global shortcuts defer to
+/// these so e.g. `,` doesn't jump to Settings mid-command.
+fn blocks_global_shortcuts(app: &App) -> bool {
+    app.is_editing_watchlist()
+        || app.pending_split
+        || app.is_choosing_window()
+        || app.pending_note_delete.is_some()
+}
+
 fn handle_spotlight_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
     let is_control = modifiers.contains(KeyModifiers::CONTROL);
     match key_code {
@@ -125,10 +177,6 @@ fn handle_onboarding_key(app: &mut App, key_code: KeyCode) {
 fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
     if app.is_editing_watchlist() {
         handle_watchlist_edit_key(app, key_code);
-        return;
-    }
-
-    if app.show_help && key_code != KeyCode::Char('?') {
         return;
     }
 
@@ -206,9 +254,6 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         (KeyCode::Char('s'), true) => app.begin_split_command(),
         (KeyCode::Char('a'), true) => app.add_panel(),
         (KeyCode::Char('c'), true) => app.change_focused_panel_content(),
-        (KeyCode::Char('g'), false) => app.toggle_locale(),
-        (KeyCode::Char(','), false) => app.open_settings(),
-        (KeyCode::Char('/'), false) => app.open_search(),
         (KeyCode::Char('e'), false) if app.focused_panel == PanelId::Watchlist => {
             app.open_watchlist_editor()
         }
@@ -455,7 +500,6 @@ fn handle_settings_key(app: &mut App, key_code: KeyCode) {
             app.move_settings_selection(SelectionDirection::Previous)
         }
         KeyCode::Down | KeyCode::Char('j') => app.move_settings_selection(SelectionDirection::Next),
-        KeyCode::Char('g') => app.toggle_locale(),
         _ => {}
     }
 }
@@ -506,5 +550,112 @@ fn handle_watchlist_panel_key(app: &mut App, key_code: KeyCode) -> bool {
         }
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crossterm::event::KeyModifiers;
+
+    fn test_app() -> App {
+        let mut app = App::new(AppConfig::default().expect("default config"));
+        app.onboarding_complete = true;
+        app.page = Page::Dashboard;
+        app
+    }
+
+    fn press(app: &mut App, key_code: KeyCode) {
+        handle_key_event(app, key_code, KeyModifiers::NONE);
+    }
+
+    #[test]
+    fn settings_reachable_from_details_and_returns_there() {
+        let mut app = test_app();
+        app.page = Page::Details;
+
+        press(&mut app, KeyCode::Char(','));
+        assert_eq!(app.page, Page::Settings);
+
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.page, Page::Details);
+    }
+
+    #[test]
+    fn settings_reachable_from_search_and_returns_there() {
+        let mut app = test_app();
+        app.page = Page::Search;
+
+        press(&mut app, KeyCode::Char(','));
+        assert_eq!(app.page, Page::Settings);
+
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.page, Page::Search);
+    }
+
+    #[test]
+    fn help_toggles_from_any_page_not_just_dashboard() {
+        for page in [Page::Search, Page::Details, Page::Settings] {
+            let mut app = test_app();
+            app.page = page;
+
+            press(&mut app, KeyCode::Char('?'));
+            assert!(app.show_help, "help should open from {page:?}");
+
+            press(&mut app, KeyCode::Char('?'));
+            assert!(!app.show_help, "help should close again from {page:?}");
+        }
+    }
+
+    #[test]
+    fn search_reachable_from_settings_and_returns_there() {
+        let mut app = test_app();
+        app.page = Page::Settings;
+
+        press(&mut app, KeyCode::Char('/'));
+        assert_eq!(app.page, Page::Search);
+
+        // Search opens straight into its text input, so the first Esc only
+        // blurs it (matching the agent panel's blur-then-close pattern); the
+        // second one navigates back.
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.page, Page::Settings);
+    }
+
+    #[test]
+    fn slash_on_notes_panel_still_begins_notes_search_not_global_search() {
+        let mut app = test_app();
+        // The Notes panel slot shows Notes content by default.
+        app.focused_panel = PanelId::Notes;
+
+        press(&mut app, KeyCode::Char('/'));
+
+        assert_eq!(app.page, Page::Dashboard);
+        assert!(app.is_text_input_target(InputTarget::NotesSearch));
+    }
+
+    #[test]
+    fn locale_toggle_works_outside_dashboard() {
+        let mut app = test_app();
+        app.page = Page::Details;
+        let before = app.preferences.language;
+
+        press(&mut app, KeyCode::Char('g'));
+
+        assert_ne!(app.preferences.language, before);
+    }
+
+    #[test]
+    fn global_shortcuts_do_not_fire_mid_pending_split() {
+        let mut app = test_app();
+        app.begin_split_command();
+        assert!(app.pending_split);
+
+        press(&mut app, KeyCode::Char(','));
+
+        assert_eq!(app.page, Page::Dashboard);
+        assert!(!app.pending_split);
     }
 }

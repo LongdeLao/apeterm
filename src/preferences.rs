@@ -217,3 +217,45 @@ fn default_language() -> Language {
         Language::English
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ape_preset_maps_to_independent_fields() {
+        let prefs = UserPreferences::ape_preset(Language::German);
+
+        assert_eq!(prefs.experience, Experience::Simple);
+        assert_eq!(prefs.tone, Tone::Ape);
+        assert_eq!(prefs.explanations, ExplanationLevel::Beginner);
+        assert_eq!(prefs.agent_style, AgentStyle::Chat);
+        assert_eq!(prefs.language, Language::German);
+        assert_eq!(prefs.preset(), PreferencePreset::Ape);
+    }
+
+    #[test]
+    fn pro_preset_maps_to_independent_fields() {
+        let prefs = UserPreferences::pro_preset(Language::English);
+
+        assert_eq!(prefs.experience, Experience::Pro);
+        assert_eq!(prefs.tone, Tone::Normal);
+        assert_eq!(prefs.explanations, ExplanationLevel::Off);
+        assert_eq!(prefs.agent_style, AgentStyle::Analyst);
+        assert_eq!(prefs.language, Language::English);
+        assert_eq!(prefs.preset(), PreferencePreset::Pro);
+    }
+
+    #[test]
+    fn pro_experience_with_ape_tone_is_custom() {
+        let prefs = UserPreferences {
+            experience: Experience::Pro,
+            tone: Tone::Ape,
+            explanations: ExplanationLevel::Off,
+            agent_style: AgentStyle::Analyst,
+            language: Language::English,
+        };
+
+        assert_eq!(prefs.preset(), PreferencePreset::Custom);
+    }
+}

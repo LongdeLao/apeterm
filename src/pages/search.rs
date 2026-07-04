@@ -834,11 +834,15 @@ fn stat_cell(
         MetricId::AverageVolume => live.avg_volume.map(format_large_number),
         MetricId::RelativeVolume => relative_volume(live).map(|value| format!("{value:.2}x")),
         MetricId::MarketCap => live.market_cap.map(format_large_number),
+        MetricId::PreviousClose => live.previous_close.map(format_price),
+        MetricId::Open => live.open.map(format_price),
+        MetricId::DayRange => day_range(live),
+        MetricId::Week52High => live.week_52_high.map(format_price),
+        MetricId::Week52Low => live.week_52_low.map(format_price),
         MetricId::PeRatio => live.trailing_pe.map(format_ratio),
         MetricId::ForwardPe => live.forward_pe.map(format_ratio),
         MetricId::DividendYield => live.dividend_yield.map(format_percent),
         MetricId::Beta => live.beta.map(format_ratio),
-        MetricId::PreviousClose => live.previous_close.map(format_price),
     };
     let color = match metric {
         MetricId::RelativeVolume => relative_volume(live)
@@ -1777,6 +1781,14 @@ fn relative_volume(live: &LiveInstrumentDetails) -> Option<f64> {
     if avg == 0.0 { None } else { Some(day / avg) }
 }
 
+fn day_range(live: &LiveInstrumentDetails) -> Option<String> {
+    Some(format!(
+        "{} - {}",
+        format_price(live.day_low?),
+        format_price(live.day_high?)
+    ))
+}
+
 fn format_price(value: f64) -> String {
     format!("{value:.2}")
 }
@@ -1897,6 +1909,20 @@ mod detail_render_tests {
                 buffer_view(terminal.backend().buffer())
             );
         }
+    }
+
+    #[test]
+    fn beginner_metric_explanation_only_appears_when_enabled() {
+        let mut app = App::new(AppConfig::default().expect("default config"));
+        let theme = crate::theme::current_theme(app.theme_name);
+        let mut lines = Vec::new();
+
+        push_focused_metric_explanation(&mut lines, &app, theme, 80, Some(MetricId::MarketCap));
+        assert!(lines.is_empty());
+
+        app.preferences.explanations = crate::preferences::ExplanationLevel::Beginner;
+        push_focused_metric_explanation(&mut lines, &app, theme, 80, Some(MetricId::MarketCap));
+        assert!(!lines.is_empty());
     }
 
     fn detail_app() -> App {

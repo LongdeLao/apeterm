@@ -394,6 +394,14 @@ pub enum Key {
     MetricExplanationRelativeVolume,
     #[strum(serialize = "metric.explanation.previous_close")]
     MetricExplanationPreviousClose,
+    #[strum(serialize = "metric.explanation.open")]
+    MetricExplanationOpen,
+    #[strum(serialize = "metric.explanation.day_range")]
+    MetricExplanationDayRange,
+    #[strum(serialize = "metric.explanation.week_52_high")]
+    MetricExplanationWeek52High,
+    #[strum(serialize = "metric.explanation.week_52_low")]
+    MetricExplanationWeek52Low,
     #[strum(serialize = "settings.title")]
     SettingsTitle,
     #[strum(serialize = "settings.footer")]
