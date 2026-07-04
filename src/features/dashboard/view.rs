@@ -8,11 +8,7 @@ use ratatui::{
 
 use crate::{
     app::{App, PanelId, WindowKind},
-    features::calendar::view as calendar,
-    features::news::view as news,
-    features::notes::view as notes,
-    features::sec::view as sec,
-    features::watchlist::view as watchlist,
+    features::{calendar, news, notes, sec, watchlist},
     i18n::Key,
     theme::current_theme,
     ui,
@@ -239,7 +235,7 @@ fn vertical_line(height: u16) -> Vec<Line<'static>> {
     (0..height).map(|_| Line::from("│")).collect()
 }
 
-pub(crate) fn render_help(frame: &mut Frame, app: &App) {
+pub fn render_help(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
     let area = centered_rect(frame.area(), 50, 17);
     let text = [

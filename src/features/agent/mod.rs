@@ -11,3 +11,5 @@ pub mod view;
 
 pub use controller::AgentController;
 pub use messages::{AgentRole, Badge};
+
+pub use view::render;

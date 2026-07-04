@@ -301,21 +301,21 @@ pub struct App {
     pub preferences: UserPreferences,
     pub i18n: I18n,
     pub theme_name: ThemeName,
-    pub dashboard: crate::features::dashboard::state::DashboardFeature,
+    pub dashboard: crate::features::dashboard::DashboardFeature,
     /// Page to return to when backing out of Search or Settings, so opening
     /// either one from Details/Search/Settings doesn't strand the user on
     /// Dashboard when they press Esc.
     pub return_page: Option<Page>,
     pub show_help: bool,
-    pub watchlist: crate::features::watchlist::state::WatchlistFeature,
+    pub watchlist: crate::features::watchlist::WatchlistFeature,
     pub ticker_db_path: PathBuf,
-    pub search: crate::features::search::state::SearchFeature,
-    pub settings: crate::features::settings::state::SettingsFeature,
-    pub news: crate::features::news::state::NewsFeature,
-    pub notes: crate::features::notes::state::NotesFeature,
-    pub sec: crate::features::sec::state::SecFeature,
+    pub search: crate::features::search::SearchFeature,
+    pub settings: crate::features::settings::SettingsFeature,
+    pub news: crate::features::news::NewsFeature,
+    pub notes: crate::features::notes::NotesFeature,
+    pub sec: crate::features::sec::SecFeature,
     pub agent: AgentController,
-    pub spotlight: crate::features::spotlight::engine::SpotlightState,
+    pub spotlight: crate::features::spotlight::SpotlightState,
     pub(crate) config: AppConfig,
 }
 
@@ -356,7 +356,7 @@ impl App {
             notes: Default::default(),
             sec: Default::default(),
             agent: AgentController::new(&config.llm),
-            spotlight: crate::features::spotlight::engine::SpotlightState::default(),
+            spotlight: crate::features::spotlight::SpotlightState::default(),
             config,
         }
     }
