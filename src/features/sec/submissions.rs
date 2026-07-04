@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::sec::{
+use crate::features::sec::{
     client::SecClient,
     types::{SecEntity, SecFiling},
 };

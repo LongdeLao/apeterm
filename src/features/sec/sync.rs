@@ -42,7 +42,7 @@ struct FilingFile {
 
 pub fn sync_all(db_path: &std::path::Path, config: &SecConfig) -> Result<usize, String> {
     let connection = db::open(db_path).map_err(|error| error.to_string())?;
-    crate::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
+    crate::features::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
     let entities =
         crate::db::sec_repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
     sync_entities(&connection, config, &entities)
@@ -54,7 +54,7 @@ pub fn sync_entity(
     entity_id: i64,
 ) -> Result<usize, String> {
     let connection = db::open(db_path).map_err(|error| error.to_string())?;
-    crate::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
+    crate::features::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
     let entity = crate::db::sec_repo::get_entity(&connection, entity_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("SEC entity {entity_id} not found"))?;
@@ -433,7 +433,7 @@ fn house_ptr_script() -> PathBuf {
 
 pub fn sync_all_verbose(db_path: &std::path::Path, config: &SecConfig) -> Result<usize, String> {
     let connection = db::open(db_path).map_err(|error| error.to_string())?;
-    crate::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
+    crate::features::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
     let entities =
         crate::db::sec_repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
     let client = SecClient::new(config)?;

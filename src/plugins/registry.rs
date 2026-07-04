@@ -56,19 +56,14 @@ pub fn registered_plugins() -> &'static [PluginSpec] {
             name: "SEC",
             description: "SEC filings: submissions, Form 4, 13F, and local sync.",
             experimental: false,
-            modules: &[
-                "sec/",
-                "app/sec_feature.rs",
-                "pages/sec.rs",
-                "db/sec_repo.rs",
-            ],
+            modules: &["features/sec/", "db/sec_repo.rs"],
         },
         PluginSpec {
             id: PluginId::Agent,
             name: "Agent",
             description: "Natural-language assistant that can call feature logic.",
             experimental: true,
-            modules: &["agent/", "app/agent_panel.rs", "pages/agent.rs"],
+            modules: &["features/agent/"],
         },
     ]
 }

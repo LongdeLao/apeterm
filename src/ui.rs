@@ -7,8 +7,9 @@ use ratatui::{
 
 use crate::{
     app::{App, Page, PanelId, WatchlistEditMode, WindowKind},
+    features::agent::view as agent,
     i18n::Key,
-    pages::{agent, dashboard, onboarding, search, settings, spotlight},
+    pages::{dashboard, onboarding, search, settings, spotlight},
     theme::current_theme,
 };
 

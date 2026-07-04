@@ -8,8 +8,8 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
-    agent::{AgentController, AgentRole, Badge},
     app::{App, InputTarget},
+    features::agent::{AgentController, AgentRole, Badge},
     i18n::Key,
     theme::{Theme, current_theme},
 };

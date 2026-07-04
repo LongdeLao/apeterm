@@ -7,11 +7,11 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    agent::{
+    config::LlmConfig,
+    features::agent::{
         llm_client::{LlmClient, LlmError},
         messages::{LlmRequest, LlmResponse, LlmRole},
     },
-    config::LlmConfig,
 };
 
 pub struct OpenRouterClient {

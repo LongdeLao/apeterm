@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::sec::types::{
+use crate::features::sec::types::{
     CongressTx, EntityKind, HoldingDelta, HoldingDeltaKind, HoldingRow, InsiderTx, SecEntity,
 };
 

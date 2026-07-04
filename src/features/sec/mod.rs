@@ -1,9 +1,11 @@
 pub mod client;
 pub mod form4;
+pub mod state;
 pub mod submissions;
 pub mod sync;
 pub mod thirteenf;
 pub mod types;
+pub mod view;
 
 use rusqlite::{Connection, params};
 
@@ -11,7 +13,7 @@ pub use types::*;
 
 pub fn ensure_seeded(connection: &Connection) -> rusqlite::Result<()> {
     let seeds = serde_json::from_str::<Vec<types::SeedEntity>>(include_str!(
-        "../../assets/sec_watchlist.json"
+        "../../../assets/sec_watchlist.json"
     ))
     .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
 

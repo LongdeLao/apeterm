@@ -18,7 +18,8 @@ use std::{
 };
 
 use crate::{
-    agent::{
+    config::LlmConfig,
+    features::agent::{
         llm_client::{LlmClient, LlmError},
         messages::{AgentMessage, AgentRole, Badge, LlmMessage, LlmRequest, LlmResponse, LlmRole},
         openrouter::OpenRouterClient,
@@ -26,7 +27,6 @@ use crate::{
         tool_call::{AssistantAction, ToolCall, ToolResult, parse_assistant_action},
         tools,
     },
-    config::LlmConfig,
     preferences::UserPreferences,
 };
 

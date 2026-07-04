@@ -2,11 +2,11 @@
 //! agent touches app state, and it only does so through App methods.
 
 use crate::{
-    agent::{
+    app::App,
+    features::agent::{
         context,
         tool_call::{ToolCall, ToolResult},
     },
-    app::App,
 };
 
 /// Tool schema given to the model in the system prompt.

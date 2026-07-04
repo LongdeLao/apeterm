@@ -6,7 +6,7 @@ use std::fmt;
 
 use async_trait::async_trait;
 
-use crate::agent::messages::{LlmRequest, LlmResponse};
+use crate::features::agent::messages::{LlmRequest, LlmResponse};
 
 #[derive(Debug, Clone)]
 pub enum LlmError {

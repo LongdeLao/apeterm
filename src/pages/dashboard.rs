@@ -8,8 +8,9 @@ use ratatui::{
 
 use crate::{
     app::{App, PanelId, WindowKind},
+    features::sec::view as sec,
     i18n::Key,
-    pages::{calendar, fill::Fill, news, notes, sec, watchlist},
+    pages::{calendar, fill::Fill, news, notes, watchlist},
     theme::current_theme,
     ui,
 };

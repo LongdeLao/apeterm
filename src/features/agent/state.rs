@@ -1,4 +1,4 @@
-use super::*;
+use crate::app::*;
 use crate::i18n::Key;
 
 impl App {
@@ -21,7 +21,7 @@ impl App {
         self.agent.panel_open
     }
     pub fn send_agent_message(&mut self) {
-        let context = crate::agent::context::build_context(self);
+        let context = crate::features::agent::context::build_context(self);
         let loading_label = self.t(Key::AgentStatusLoading).to_string();
         self.agent
             .submit(&context, &self.preferences, loading_label);
@@ -30,7 +30,7 @@ impl App {
     /// against the app and feed the result back into the conversation.
     pub fn poll_agent_response(&mut self) {
         while let Some(call) = self.agent.poll() {
-            let result = crate::agent::tools::execute(self, call);
+            let result = crate::features::agent::tools::execute(self, call);
             self.agent.push_tool_result(result);
         }
     }

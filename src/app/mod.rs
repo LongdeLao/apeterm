@@ -9,8 +9,8 @@ use std::{collections::HashSet, path::PathBuf, sync::mpsc::Receiver, time::Insta
 
 use serde::{Deserialize, Serialize};
 
+use crate::features::agent::AgentController;
 use crate::{
-    agent::AgentController,
     backend::BackendInsight,
     config::AppConfig,
     i18n::{I18n, Key, Locale},
@@ -23,12 +23,10 @@ use crate::{
     search::{InstrumentDetails, LiveInstrumentDetails, SearchResult},
 };
 
-mod agent_panel;
 mod dashboard;
 mod news_feature;
 mod notes_feature;
 mod search_feature;
-mod sec_feature;
 mod settings_feature;
 mod spotlight_panel;
 mod watchlist_feature;
@@ -270,19 +268,19 @@ pub struct NotesDraft {
 }
 
 #[derive(Debug)]
-enum NewsEvent {
+pub(crate) enum NewsEvent {
     Loaded { result: FetchResult, done: bool },
     Error(String),
 }
 
 #[derive(Debug)]
-enum SecEvent {
+pub(crate) enum SecEvent {
     Done(String),
     Error(String),
 }
 
 #[derive(Debug)]
-enum BackendInsightEvent {
+pub(crate) enum BackendInsightEvent {
     Loaded {
         symbol: String,
         insight: Option<BackendInsight>,
@@ -338,7 +336,7 @@ pub struct App {
     pub selected_details: Option<InstrumentDetails>,
     pub selected_live_details: Option<LiveInstrumentDetails>,
     pub live_details_loading: bool,
-    live_details_receiver: Option<Receiver<Option<LiveInstrumentDetails>>>,
+    pub(crate) live_details_receiver: Option<Receiver<Option<LiveInstrumentDetails>>>,
     pub detail_timeframe: DetailTimeframe,
     pub detail_sidebar_scroll: usize,
     pub detail_metric_selection: usize,
@@ -347,7 +345,7 @@ pub struct App {
     pub backend_insight: Option<BackendInsight>,
     pub backend_insight_loading: bool,
     pub backend_insight_status: Option<String>,
-    backend_insight_receiver: Option<Receiver<BackendInsightEvent>>,
+    pub(crate) backend_insight_receiver: Option<Receiver<BackendInsightEvent>>,
     pub search_message: Option<String>,
     pub settings_selection: usize,
     pub reset_confirmation: Option<TextInput>,
@@ -366,8 +364,8 @@ pub struct App {
     pub news_connection_status: String,
     pub news_source_counts: Vec<(String, usize)>,
     pub collapsed_watchlist_news: HashSet<String>,
-    known_watchlist_news_symbols: HashSet<String>,
-    last_news_refresh: Option<Instant>,
+    pub(crate) known_watchlist_news_symbols: HashSet<String>,
+    pub(crate) last_news_refresh: Option<Instant>,
     pub notes_tab: NotesFilterTab,
     pub notes_selection: usize,
     pub notes_scroll: usize,
@@ -384,13 +382,13 @@ pub struct App {
     pub sec_congress_selection: usize,
     pub sec_status: Option<String>,
     pub sec_loading: bool,
-    sec_receiver: Option<Receiver<SecEvent>>,
-    last_sec_refresh: Option<Instant>,
-    financial_juice_cooldown_until: Option<Instant>,
+    pub(crate) sec_receiver: Option<Receiver<SecEvent>>,
+    pub(crate) last_sec_refresh: Option<Instant>,
+    pub(crate) financial_juice_cooldown_until: Option<Instant>,
     pub agent: AgentController,
     pub spotlight: crate::spotlight::SpotlightState,
-    news_receiver: Option<Receiver<NewsEvent>>,
-    config: AppConfig,
+    pub(crate) news_receiver: Option<Receiver<NewsEvent>>,
+    pub(crate) config: AppConfig,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

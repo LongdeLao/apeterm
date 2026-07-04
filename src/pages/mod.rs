@@ -2,7 +2,6 @@
 //! mutate it or hold feature business logic — that belongs in
 //! `app/*_feature.rs` or the feature's own module.
 
-pub mod agent;
 pub mod calendar;
 pub mod dashboard;
 pub mod fill;
@@ -11,7 +10,6 @@ pub mod notes;
 pub mod onboarding;
 pub mod panel;
 pub mod search;
-pub mod sec;
 pub mod settings;
 pub mod spotlight;
 pub mod watchlist;

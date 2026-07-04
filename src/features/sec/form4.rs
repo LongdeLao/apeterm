@@ -1,7 +1,7 @@
 use quick_xml::de::from_str;
 use serde::Deserialize;
 
-use crate::sec::types::ParsedInsiderTx;
+use crate::features::sec::types::ParsedInsiderTx;
 
 #[derive(Debug, Deserialize)]
 struct OwnershipDocument {
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn parses_real_form4_fixture() {
-        let xml = include_str!("../../tests/fixtures/sec/tim_cook_form4.xml");
+        let xml = include_str!("../../../tests/fixtures/sec/tim_cook_form4.xml");
         let transactions = parse_form4(xml, "2023-10-03").unwrap();
         assert!(!transactions.is_empty());
         assert!(transactions.iter().any(|tx| tx.code == "M"));

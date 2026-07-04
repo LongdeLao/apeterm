@@ -1,13 +1,13 @@
 use std::time::Duration;
 use std::{error::Error, io};
 
-mod agent;
 mod app;
 mod backend;
 mod config;
 mod db;
 mod enrich;
 mod event;
+mod features;
 mod i18n;
 mod import;
 mod market;
@@ -21,7 +21,6 @@ mod plugins;
 mod preferences;
 mod quotes;
 mod search;
-mod sec;
 mod spotlight;
 mod theme;
 mod ui;
@@ -36,6 +35,7 @@ use crossterm::{
         enable_raw_mode,
     },
 };
+use features::sec;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use rusqlite::params;
 

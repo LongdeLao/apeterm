@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::sec::types::ParsedHolding;
+use crate::features::sec::types::ParsedHolding;
 
 pub fn parse_information_table(xml: &str) -> Result<Vec<ParsedHolding>, String> {
     let row_re = Regex::new(r"(?s)<infoTable\b[^>]*>(.*?)</infoTable>")
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn parses_real_13f_fixture() {
-        let xml = include_str!("../../tests/fixtures/sec/berkshire_infotable.xml");
+        let xml = include_str!("../../../tests/fixtures/sec/berkshire_infotable.xml");
         let holdings = parse_information_table(xml).unwrap();
         assert!(!holdings.is_empty());
         assert!(holdings.iter().any(|row| row.cusip == "023135106"));

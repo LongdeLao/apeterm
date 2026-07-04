@@ -684,7 +684,9 @@ struct HoldingDeltaSummary {
     sold: Vec<String>,
 }
 
-fn summarize_holding_deltas(deltas: &[crate::sec::types::HoldingDelta]) -> HoldingDeltaSummary {
+fn summarize_holding_deltas(
+    deltas: &[crate::features::sec::types::HoldingDelta],
+) -> HoldingDeltaSummary {
     let mut top_add: Option<(&str, i64)> = None;
     let mut top_cut: Option<(&str, i64)> = None;
     let mut bought = Vec::new();
