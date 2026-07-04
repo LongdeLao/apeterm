@@ -1,5 +1,6 @@
 pub mod client;
 pub mod form4;
+pub mod repo;
 pub mod state;
 pub mod submissions;
 pub mod sync;

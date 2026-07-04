@@ -52,9 +52,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     };
 
     let entities = match app.sec_tab {
-        SecTab::Institutional => db::sec_repo::list_entities(&connection, EntityKind::Institution),
-        SecTab::Ceos => db::sec_repo::list_ceo_entities(&connection, false),
-        SecTab::Congress => db::sec_repo::list_ceo_entities(&connection, true),
+        SecTab::Institutional => {
+            crate::features::sec::repo::list_entities(&connection, EntityKind::Institution)
+        }
+        SecTab::Ceos => crate::features::sec::repo::list_ceo_entities(&connection, false),
+        SecTab::Congress => crate::features::sec::repo::list_ceo_entities(&connection, true),
     };
     let entities = entities.unwrap_or_default();
     if entities.is_empty() {
@@ -180,8 +182,8 @@ fn render_watchlist(
         };
         let glyph = match app.sec_tab {
             SecTab::Institutional => {
-                let deltas =
-                    db::sec_repo::holding_deltas(connection, entity.id).unwrap_or_default();
+                let deltas = crate::features::sec::repo::holding_deltas(connection, entity.id)
+                    .unwrap_or_default();
                 if deltas
                     .iter()
                     .any(|delta| delta.kind != HoldingDeltaKind::Unchanged)
@@ -192,10 +194,11 @@ fn render_watchlist(
                 }
             }
             SecTab::Ceos => {
-                let code = db::sec_repo::latest_transaction_code(connection, entity.id)
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default();
+                let code =
+                    crate::features::sec::repo::latest_transaction_code(connection, entity.id)
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default();
                 let (glyph, color) = if code == "P" {
                     ("● ", theme.positive)
                 } else if code == "S" {
@@ -206,10 +209,12 @@ fn render_watchlist(
                 Span::styled(glyph, Style::default().fg(color))
             }
             SecTab::Congress => {
-                let code = db::sec_repo::latest_congress_transaction_type(connection, entity.id)
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default();
+                let code = crate::features::sec::repo::latest_congress_transaction_type(
+                    connection, entity.id,
+                )
+                .ok()
+                .flatten()
+                .unwrap_or_default();
                 let (glyph, color) = if code.starts_with('P') {
                     ("● ", theme.positive)
                 } else if code.starts_with('S') {
@@ -272,7 +277,8 @@ fn render_institution_detail(
 
     render_detail_header(frame, app, sections[0], connection, entity);
 
-    let history = db::sec_repo::portfolio_value_history(connection, entity.id).unwrap_or_default();
+    let history = crate::features::sec::repo::portfolio_value_history(connection, entity.id)
+        .unwrap_or_default();
     let current_total = history
         .last()
         .map(|(_, value)| thirteenf_value_to_usd(*value))
@@ -286,8 +292,10 @@ fn render_institution_detail(
         .filter(|value| *value > 0.0)
         .map(|value| (current_total - value) / value * 100.0);
 
-    let holdings = db::sec_repo::latest_holdings(connection, entity.id).unwrap_or_default();
-    let deltas = db::sec_repo::holding_deltas(connection, entity.id).unwrap_or_default();
+    let holdings =
+        crate::features::sec::repo::latest_holdings(connection, entity.id).unwrap_or_default();
+    let deltas =
+        crate::features::sec::repo::holding_deltas(connection, entity.id).unwrap_or_default();
     let delta_map = deltas
         .iter()
         .cloned()
@@ -451,7 +459,7 @@ fn render_ceo_detail(
         .split(area);
     render_detail_header(frame, app, sections[0], connection, entity);
 
-    let rows = db::sec_repo::recent_insider_txs(connection, entity.id, 20)
+    let rows = crate::features::sec::repo::recent_insider_txs(connection, entity.id, 20)
         .unwrap_or_default()
         .into_iter()
         .map(|tx| {
@@ -526,7 +534,8 @@ fn render_congress_detail(
         .constraints([Constraint::Length(4), Constraint::Min(0)])
         .split(area);
     render_detail_header(frame, app, sections[0], connection, entity);
-    let txs = db::sec_repo::recent_congress_txs(connection, entity.id, 20).unwrap_or_default();
+    let txs = crate::features::sec::repo::recent_congress_txs(connection, entity.id, 20)
+        .unwrap_or_default();
     if txs.is_empty() {
         let message = if entity.subtitle.as_deref() == Some("Senate") {
             "Senate disclosures are not ingesting yet."
@@ -590,7 +599,7 @@ fn render_detail_header(
     entity: &SecEntity,
 ) {
     let theme = current_theme(app.theme_name);
-    let last_synced = db::sec_repo::last_polled_at(connection, entity.id)
+    let last_synced = crate::features::sec::repo::last_polled_at(connection, entity.id)
         .ok()
         .flatten()
         .and_then(|value| parse_relative_time(&value))

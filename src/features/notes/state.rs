@@ -4,13 +4,13 @@ use crate::features::news::feed as news;
 use crate::features::search::engine as search;
 
 impl App {
-    pub fn notes_visible(&self) -> Vec<db::notes_repo::NoteRow> {
+    pub fn notes_visible(&self) -> Vec<crate::features::notes::repo::NoteRow> {
         let Ok(connection) = db::open(&self.ticker_db_path) else {
             return Vec::new();
         };
-        let all = db::notes_repo::list_all(&connection).unwrap_or_default();
+        let all = crate::features::notes::repo::list_all(&connection).unwrap_or_default();
 
-        let mut filtered: Vec<db::notes_repo::NoteRow> =
+        let mut filtered: Vec<crate::features::notes::repo::NoteRow> =
             if let Some(symbol) = &self.notes_ticker_filter {
                 all.into_iter()
                     .filter(|note| note.tickers.iter().any(|ticker| ticker == symbol))
@@ -23,7 +23,8 @@ impl App {
 
         let query = self.notes_search_query.trim();
         if !query.is_empty() {
-            let mut ids = db::notes_repo::search_fts(&connection, query).unwrap_or_default();
+            let mut ids =
+                crate::features::notes::repo::search_fts(&connection, query).unwrap_or_default();
             if ids.is_empty() {
                 let lowered = query.to_ascii_lowercase();
                 ids = filtered
@@ -37,7 +38,7 @@ impl App {
 
         filtered
     }
-    pub(crate) fn notes_matches_tab(&self, note: &db::notes_repo::NoteRow) -> bool {
+    pub(crate) fn notes_matches_tab(&self, note: &crate::features::notes::repo::NoteRow) -> bool {
         match self.notes_tab {
             NotesFilterTab::All => true,
             NotesFilterTab::Tickers => !note.tickers.is_empty(),
@@ -45,7 +46,7 @@ impl App {
             NotesFilterTab::Pinned => note.pinned,
         }
     }
-    pub fn notes_selected_row(&self) -> Option<db::notes_repo::NoteRow> {
+    pub fn notes_selected_row(&self) -> Option<crate::features::notes::repo::NoteRow> {
         let rows = self.notes_visible();
         rows.get(self.notes_selection.min(rows.len().saturating_sub(1)))
             .cloned()
@@ -98,7 +99,7 @@ impl App {
         let Ok(connection) = db::open(&self.ticker_db_path) else {
             return;
         };
-        let Ok(id) = db::notes_repo::insert(&connection, "", &[], &[], now) else {
+        let Ok(id) = crate::features::notes::repo::insert(&connection, "", &[], &[], now) else {
             return;
         };
 
@@ -153,12 +154,12 @@ impl App {
         };
 
         if draft.body.trim().is_empty() {
-            let _ = db::notes_repo::delete(&connection, draft.note_id);
+            let _ = crate::features::notes::repo::delete(&connection, draft.note_id);
         } else {
             let tickers = self.extract_note_tickers(&draft.body);
             let tags = extract_note_tags(&draft.body);
             let now = chrono::Utc::now().timestamp();
-            let _ = db::notes_repo::update(
+            let _ = crate::features::notes::repo::update(
                 &connection,
                 draft.note_id,
                 &draft.body,
@@ -288,7 +289,7 @@ impl App {
             return;
         };
         if let Ok(connection) = db::open(&self.ticker_db_path) {
-            let _ = db::notes_repo::set_pinned(&connection, note.id, !note.pinned);
+            let _ = crate::features::notes::repo::set_pinned(&connection, note.id, !note.pinned);
         }
     }
     pub fn begin_delete_selected_note(&mut self) {
@@ -302,7 +303,7 @@ impl App {
             return;
         };
         if let Ok(connection) = db::open(&self.ticker_db_path) {
-            let _ = db::notes_repo::delete(&connection, id);
+            let _ = crate::features::notes::repo::delete(&connection, id);
         }
 
         let visible = self.notes_visible().len();
@@ -319,7 +320,7 @@ impl App {
     }
     pub fn notes_ticker_symbols(&self) -> std::collections::HashSet<String> {
         db::open(&self.ticker_db_path)
-            .and_then(|connection| db::notes_repo::all_ticker_symbols(&connection))
+            .and_then(|connection| crate::features::notes::repo::all_ticker_symbols(&connection))
             .unwrap_or_default()
     }
     pub fn jump_to_notes_for_symbol(&mut self, symbol: &str) {

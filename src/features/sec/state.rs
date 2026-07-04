@@ -135,10 +135,15 @@ impl App {
         let connection = db::open(&self.ticker_db_path).ok()?;
         let entities = match self.sec_tab {
             SecTab::Institutional => {
-                db::sec_repo::list_entities(&connection, EntityKind::Institution).ok()?
+                crate::features::sec::repo::list_entities(&connection, EntityKind::Institution)
+                    .ok()?
             }
-            SecTab::Ceos => db::sec_repo::list_ceo_entities(&connection, false).ok()?,
-            SecTab::Congress => db::sec_repo::list_ceo_entities(&connection, true).ok()?,
+            SecTab::Ceos => {
+                crate::features::sec::repo::list_ceo_entities(&connection, false).ok()?
+            }
+            SecTab::Congress => {
+                crate::features::sec::repo::list_ceo_entities(&connection, true).ok()?
+            }
         };
         let index = self
             .active_sec_selection()
@@ -151,10 +156,10 @@ impl App {
         };
         match self.sec_tab {
             SecTab::Institutional => {
-                db::sec_repo::list_entities(&connection, EntityKind::Institution)
+                crate::features::sec::repo::list_entities(&connection, EntityKind::Institution)
             }
-            SecTab::Ceos => db::sec_repo::list_ceo_entities(&connection, false),
-            SecTab::Congress => db::sec_repo::list_ceo_entities(&connection, true),
+            SecTab::Ceos => crate::features::sec::repo::list_ceo_entities(&connection, false),
+            SecTab::Congress => crate::features::sec::repo::list_ceo_entities(&connection, true),
         }
         .map(|entities| entities.len())
         .unwrap_or(0)

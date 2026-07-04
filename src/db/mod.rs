@@ -1,13 +1,11 @@
+//! Shared DB setup: connection opening and schema initialization.
+//! Per-feature persistence lives in features/<name>/repo.rs.
+
 use std::path::Path;
 
 use rusqlite::{Connection, Result};
 
 use crate::config;
-
-#[path = "db/notes_repo.rs"]
-pub mod notes_repo;
-#[path = "db/sec_repo.rs"]
-pub mod sec_repo;
 
 pub fn open(path: &Path) -> Result<Connection> {
     config::ensure_parent(path)

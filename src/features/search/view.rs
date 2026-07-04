@@ -1273,7 +1273,7 @@ fn push_notes(
         )));
         return;
     };
-    let notes = db::notes_repo::list_all(&connection)
+    let notes = crate::features::notes::repo::list_all(&connection)
         .unwrap_or_default()
         .into_iter()
         .filter(|note| note.tickers.iter().any(|ticker| ticker == symbol))

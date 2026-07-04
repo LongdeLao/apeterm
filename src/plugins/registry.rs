@@ -26,7 +26,7 @@ pub fn registered_plugins() -> &'static [PluginSpec] {
             name: "Notes",
             description: "Per-symbol and general notes with search.",
             experimental: false,
-            modules: &["features/notes/", "db/notes_repo.rs"],
+            modules: &["features/notes/"],
         },
         PluginSpec {
             id: PluginId::Insights,
@@ -47,7 +47,7 @@ pub fn registered_plugins() -> &'static [PluginSpec] {
             name: "SEC",
             description: "SEC filings: submissions, Form 4, 13F, and local sync.",
             experimental: false,
-            modules: &["features/sec/", "db/sec_repo.rs"],
+            modules: &["features/sec/"],
         },
         PluginSpec {
             id: PluginId::Agent,

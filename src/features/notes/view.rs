@@ -9,7 +9,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     app::{App, InputTarget, NotesFilterTab, PanelId},
-    db::notes_repo::NoteRow,
+    features::notes::repo::NoteRow,
     i18n::Key,
     theme::{Theme, current_theme},
     ui::panel,

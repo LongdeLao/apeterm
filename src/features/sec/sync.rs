@@ -44,7 +44,7 @@ pub fn sync_all(db_path: &std::path::Path, config: &SecConfig) -> Result<usize, 
     let connection = db::open(db_path).map_err(|error| error.to_string())?;
     crate::features::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
     let entities =
-        crate::db::sec_repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
+        crate::features::sec::repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
     sync_entities(&connection, config, &entities)
 }
 
@@ -55,7 +55,7 @@ pub fn sync_entity(
 ) -> Result<usize, String> {
     let connection = db::open(db_path).map_err(|error| error.to_string())?;
     crate::features::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
-    let entity = crate::db::sec_repo::get_entity(&connection, entity_id)
+    let entity = crate::features::sec::repo::get_entity(&connection, entity_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("SEC entity {entity_id} not found"))?;
     sync_entities(&connection, config, &[entity])
@@ -93,7 +93,7 @@ fn sync_single_entity(
     }
 
     maybe_reset_institution_backfill(connection, entity)?;
-    let last_seen = crate::db::sec_repo::last_accession_seen(connection, entity.id)
+    let last_seen = crate::features::sec::repo::last_accession_seen(connection, entity.id)
         .map_err(|error| error.to_string())?;
     let filings = new_accessions(client, entity, last_seen.as_deref())?;
     let mut latest_success = last_seen;
@@ -435,7 +435,7 @@ pub fn sync_all_verbose(db_path: &std::path::Path, config: &SecConfig) -> Result
     let connection = db::open(db_path).map_err(|error| error.to_string())?;
     crate::features::sec::ensure_seeded(&connection).map_err(|error| error.to_string())?;
     let entities =
-        crate::db::sec_repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
+        crate::features::sec::repo::list_all_entities(&connection).map_err(|e| e.to_string())?;
     let client = SecClient::new(config)?;
     let mut synced = 0;
 
