@@ -156,7 +156,7 @@ fn blocks_global_shortcuts(app: &App) -> bool {
     app.is_editing_watchlist()
         || app.pending_split
         || app.is_choosing_window()
-        || app.pending_note_delete.is_some()
+        || app.notes.pending_delete.is_some()
 }
 
 fn handle_spotlight_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
@@ -308,7 +308,7 @@ fn handle_notes_key(app: &mut App, key_code: KeyCode) -> bool {
         return false;
     }
 
-    if app.pending_note_delete.is_some() {
+    if app.notes.pending_delete.is_some() {
         match key_code {
             KeyCode::Char('d') | KeyCode::Char('y') => app.confirm_delete_note(),
             _ => app.cancel_delete_note(),

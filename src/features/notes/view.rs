@@ -40,7 +40,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     render_tabs(frame, app, chunks[1]);
 
     let rows = app.notes_visible();
-    let selected = rows.get(app.notes_selection.min(rows.len().saturating_sub(1)));
+    let selected = rows.get(app.notes.selection.min(rows.len().saturating_sub(1)));
 
     if rows.is_empty() {
         frame.render_widget(
@@ -61,13 +61,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         render_notes_list(frame, app, panes[0], &rows);
         render_gap(frame, panes[1]);
         render_document(frame, app, panes[2], selected);
-    } else if app.notes_insert_mode {
+    } else if app.notes.insert_mode {
         render_document(frame, app, chunks[2], selected);
     } else {
         render_notes_list(frame, app, chunks[2], &rows);
     }
 
-    if app.pending_note_delete.is_some() {
+    if app.notes.pending_delete.is_some() {
         render_delete_confirm(frame, app, area);
     }
 }
@@ -90,7 +90,7 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
         tabs.into_iter()
             .enumerate()
             .flat_map(|(index, (tab, label))| {
-                let selected = app.notes_tab == tab;
+                let selected = app.notes.tab == tab;
                 let style = if selected {
                     Style::default()
                         .fg(theme.foreground)
@@ -117,14 +117,14 @@ fn render_notes_list(frame: &mut Frame, app: &App, area: Rect, rows: &[NoteRow])
         return;
     }
 
-    let scroll = app.notes_scroll.min(rows.len().saturating_sub(1));
+    let scroll = app.notes.scroll.min(rows.len().saturating_sub(1));
     let table_rows = rows
         .iter()
         .skip(scroll)
         .take(inner.height as usize)
         .enumerate()
         .map(|(offset, note)| {
-            let selected = scroll + offset == app.notes_selection;
+            let selected = scroll + offset == app.notes.selection;
             render_note_row(app, note, selected, inner.width)
         })
         .collect::<Vec<_>>();
@@ -224,12 +224,12 @@ fn render_document(frame: &mut Frame, app: &App, area: Rect, row: Option<&NoteRo
     };
 
     let is_draft = app
-        .notes_draft
+        .notes.draft
         .as_ref()
         .is_some_and(|draft| row.is_some_and(|note| note.id == draft.note_id) || row.is_none());
 
     let Some(body) = (if is_draft {
-        app.notes_draft.as_ref().map(|draft| draft.body.as_str())
+        app.notes.draft.as_ref().map(|draft| draft.body.as_str())
     } else {
         row.map(|note| note.body.as_str())
     }) else {
@@ -264,7 +264,7 @@ fn render_document(frame: &mut Frame, app: &App, area: Rect, row: Option<&NoteRo
     frame.render_widget(Paragraph::new(lines), inset);
 
     let insert_active =
-        app.notes_insert_mode && is_draft && app.is_text_input_target(InputTarget::Notes);
+        app.notes.insert_mode && is_draft && app.is_text_input_target(InputTarget::Notes);
     if insert_active {
         let last_line = wrapped.last().map(String::as_str).unwrap_or("");
         let cursor_row = header_rows + wrapped.len().saturating_sub(1) as u16;
@@ -279,7 +279,7 @@ fn render_document(frame: &mut Frame, app: &App, area: Rect, row: Option<&NoteRo
         ));
     }
 
-    if insert_active && !app.notes_suggestions.is_empty() {
+    if insert_active && !app.notes.suggestions.is_empty() {
         render_suggestions(frame, app, inset, header_rows + wrapped.len() as u16, theme);
     }
 }
@@ -324,7 +324,7 @@ fn meta_line(label: &str, value: &str, theme: Theme) -> Line<'static> {
 }
 
 fn render_suggestions(frame: &mut Frame, app: &App, inset: Rect, offset_row: u16, theme: Theme) {
-    let count = app.notes_suggestions.len().min(6) as u16;
+    let count = app.notes.suggestions.len().min(6) as u16;
     let area = Rect {
         x: inset.x,
         y: inset
@@ -340,12 +340,12 @@ fn render_suggestions(frame: &mut Frame, app: &App, inset: Rect, offset_row: u16
 
     let background = theme.background.unwrap_or(Color::Black);
     let lines: Vec<Line> = app
-        .notes_suggestions
+        .notes.suggestions
         .iter()
         .take(6)
         .enumerate()
         .map(|(index, suggestion)| {
-            let selected = index == app.notes_suggestion_selection;
+            let selected = index == app.notes.suggestion_selection;
             let style = if selected {
                 Style::default()
                     .fg(theme.background.unwrap_or(Color::Black))

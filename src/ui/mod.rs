@@ -107,10 +107,10 @@ fn footer_text(app: &App) -> String {
     if app.spotlight.open {
         return app.t(Key::SpotlightFooter).to_string();
     }
-    if app.notes_insert_mode {
+    if app.notes.insert_mode {
         return app.t(Key::NotesEditFooter).to_string();
     }
-    if app.pending_note_delete.is_some() {
+    if app.notes.pending_delete.is_some() {
         return app.t(Key::NotesDeleteConfirmFooter).to_string();
     }
     if app.is_text_input_target(crate::app::InputTarget::NotesSearch) {

@@ -2,6 +2,22 @@ use crate::app::*;
 use crate::db;
 use crate::features::news::feed as news;
 use crate::features::search::engine as search;
+use crate::features::search::engine::SearchResult;
+
+/// UI state owned by the notes feature.
+#[derive(Debug, Default)]
+pub struct NotesFeature {
+    pub tab: NotesFilterTab,
+    pub selection: usize,
+    pub scroll: usize,
+    pub search_query: String,
+    pub ticker_filter: Option<String>,
+    pub insert_mode: bool,
+    pub draft: Option<NotesDraft>,
+    pub suggestions: Vec<SearchResult>,
+    pub suggestion_selection: usize,
+    pub pending_delete: Option<i64>,
+}
 
 impl App {
     pub fn notes_visible(&self) -> Vec<crate::features::notes::repo::NoteRow> {
@@ -11,7 +27,7 @@ impl App {
         let all = crate::features::notes::repo::list_all(&connection).unwrap_or_default();
 
         let mut filtered: Vec<crate::features::notes::repo::NoteRow> =
-            if let Some(symbol) = &self.notes_ticker_filter {
+            if let Some(symbol) = &self.notes.ticker_filter {
                 all.into_iter()
                     .filter(|note| note.tickers.iter().any(|ticker| ticker == symbol))
                     .collect()
@@ -21,7 +37,7 @@ impl App {
                     .collect()
             };
 
-        let query = self.notes_search_query.trim();
+        let query = self.notes.search_query.trim();
         if !query.is_empty() {
             let mut ids =
                 crate::features::notes::repo::search_fts(&connection, query).unwrap_or_default();
@@ -39,7 +55,7 @@ impl App {
         filtered
     }
     pub(crate) fn notes_matches_tab(&self, note: &crate::features::notes::repo::NoteRow) -> bool {
-        match self.notes_tab {
+        match self.notes.tab {
             NotesFilterTab::All => true,
             NotesFilterTab::Tickers => !note.tickers.is_empty(),
             NotesFilterTab::Journal => note.tickers.is_empty(),
@@ -48,11 +64,11 @@ impl App {
     }
     pub fn notes_selected_row(&self) -> Option<crate::features::notes::repo::NoteRow> {
         let rows = self.notes_visible();
-        rows.get(self.notes_selection.min(rows.len().saturating_sub(1)))
+        rows.get(self.notes.selection.min(rows.len().saturating_sub(1)))
             .cloned()
     }
     pub fn cycle_notes_tab(&mut self, direction: SelectionDirection) {
-        self.notes_tab = match (self.notes_tab, direction) {
+        self.notes.tab = match (self.notes.tab, direction) {
             (NotesFilterTab::All, SelectionDirection::Previous) => NotesFilterTab::Pinned,
             (NotesFilterTab::All, SelectionDirection::Next) => NotesFilterTab::Tickers,
             (NotesFilterTab::Tickers, SelectionDirection::Previous) => NotesFilterTab::All,
@@ -62,34 +78,34 @@ impl App {
             (NotesFilterTab::Pinned, SelectionDirection::Previous) => NotesFilterTab::Journal,
             (NotesFilterTab::Pinned, SelectionDirection::Next) => NotesFilterTab::All,
         };
-        self.notes_ticker_filter = None;
-        self.notes_selection = 0;
-        self.notes_scroll = 0;
+        self.notes.ticker_filter = None;
+        self.notes.selection = 0;
+        self.notes.scroll = 0;
     }
     pub fn move_notes_selection(&mut self, direction: SelectionDirection) {
         let count = self.notes_visible().len();
         if count == 0 {
-            self.notes_selection = 0;
-            self.notes_scroll = 0;
+            self.notes.selection = 0;
+            self.notes.scroll = 0;
             return;
         }
 
-        self.notes_selection = match direction {
-            SelectionDirection::Previous => self.notes_selection.saturating_sub(1),
-            SelectionDirection::Next => (self.notes_selection + 1).min(count - 1),
+        self.notes.selection = match direction {
+            SelectionDirection::Previous => self.notes.selection.saturating_sub(1),
+            SelectionDirection::Next => (self.notes.selection + 1).min(count - 1),
         };
         self.sync_notes_scroll(6);
     }
     pub fn sync_notes_scroll(&mut self, visible_rows: usize) {
         if visible_rows == 0 {
-            self.notes_scroll = self.notes_selection;
+            self.notes.scroll = self.notes.selection;
             return;
         }
 
-        if self.notes_selection < self.notes_scroll {
-            self.notes_scroll = self.notes_selection;
-        } else if self.notes_selection >= self.notes_scroll + visible_rows {
-            self.notes_scroll = self.notes_selection + 1 - visible_rows;
+        if self.notes.selection < self.notes.scroll {
+            self.notes.scroll = self.notes.selection;
+        } else if self.notes.selection >= self.notes.scroll + visible_rows {
+            self.notes.scroll = self.notes.selection + 1 - visible_rows;
         }
     }
     /// Creates an empty note, inserts it into the list, selects it, and
@@ -103,21 +119,21 @@ impl App {
             return;
         };
 
-        self.notes_tab = NotesFilterTab::All;
-        self.notes_ticker_filter = None;
-        self.notes_search_query.clear();
+        self.notes.tab = NotesFilterTab::All;
+        self.notes.ticker_filter = None;
+        self.notes.search_query.clear();
 
         let rows = self.notes_visible();
-        self.notes_selection = rows.iter().position(|note| note.id == id).unwrap_or(0);
+        self.notes.selection = rows.iter().position(|note| note.id == id).unwrap_or(0);
         self.sync_notes_scroll(6);
 
-        self.notes_draft = Some(NotesDraft {
+        self.notes.draft = Some(NotesDraft {
             note_id: id,
             body: String::new(),
         });
-        self.notes_suggestions.clear();
-        self.notes_suggestion_selection = 0;
-        self.notes_insert_mode = true;
+        self.notes.suggestions.clear();
+        self.notes.suggestion_selection = 0;
+        self.notes.insert_mode = true;
         self.begin_text_input(InputTarget::Notes);
     }
     /// Enters insert mode on the currently selected note (Enter / `i`).
@@ -127,26 +143,26 @@ impl App {
             self.create_new_note();
             return;
         };
-        self.notes_draft = Some(NotesDraft {
+        self.notes.draft = Some(NotesDraft {
             note_id: note.id,
             body: note.body,
         });
-        self.notes_suggestions.clear();
-        self.notes_suggestion_selection = 0;
-        self.notes_insert_mode = true;
+        self.notes.suggestions.clear();
+        self.notes.suggestion_selection = 0;
+        self.notes.insert_mode = true;
         self.begin_text_input(InputTarget::Notes);
     }
     /// Leaves insert mode (Esc): persists the draft, recomputes
     /// tickers/tags, and drops empty notes rather than leaving clutter.
     pub fn exit_note_insert_mode(&mut self) {
         self.finalize_note_draft();
-        self.notes_insert_mode = false;
-        self.notes_suggestions.clear();
-        self.notes_suggestion_selection = 0;
+        self.notes.insert_mode = false;
+        self.notes.suggestions.clear();
+        self.notes.suggestion_selection = 0;
         self.clear_text_input_mode();
     }
     pub(crate) fn finalize_note_draft(&mut self) {
-        let Some(draft) = self.notes_draft.take() else {
+        let Some(draft) = self.notes.draft.take() else {
             return;
         };
         let Ok(connection) = db::open(&self.ticker_db_path) else {
@@ -170,13 +186,13 @@ impl App {
         }
 
         let visible = self.notes_visible().len();
-        if self.notes_selection >= visible {
-            self.notes_selection = visible.saturating_sub(1);
+        if self.notes.selection >= visible {
+            self.notes.selection = visible.saturating_sub(1);
         }
         self.sync_notes_scroll(6);
     }
     pub fn insert_note_draft_newline(&mut self) {
-        if let Some(draft) = &mut self.notes_draft {
+        if let Some(draft) = &mut self.notes.draft {
             draft.body.push('\n');
         }
         self.refresh_note_suggestions();
@@ -185,21 +201,21 @@ impl App {
         if character.is_control() {
             return;
         }
-        if let Some(draft) = &mut self.notes_draft {
+        if let Some(draft) = &mut self.notes.draft {
             draft.body.push(character);
         }
         self.refresh_note_suggestions();
     }
     pub fn pop_note_draft_char(&mut self) {
-        if let Some(draft) = &mut self.notes_draft {
+        if let Some(draft) = &mut self.notes.draft {
             draft.body.pop();
         }
         self.refresh_note_suggestions();
     }
     pub(crate) fn refresh_note_suggestions(&mut self) {
-        let Some(draft) = &self.notes_draft else {
-            self.notes_suggestions.clear();
-            self.notes_suggestion_selection = 0;
+        let Some(draft) = &self.notes.draft else {
+            self.notes.suggestions.clear();
+            self.notes.suggestion_selection = 0;
             return;
         };
 
@@ -208,8 +224,8 @@ impl App {
             .strip_prefix('$')
             .filter(|query| !query.is_empty())
         else {
-            self.notes_suggestions.clear();
-            self.notes_suggestion_selection = 0;
+            self.notes.suggestions.clear();
+            self.notes.suggestion_selection = 0;
             return;
         };
 
@@ -217,38 +233,38 @@ impl App {
             .and_then(|connection| search::search_assets(&connection, query, &["stock", "etf"], 6))
         {
             Ok(results) => {
-                self.notes_suggestions = results;
-                self.notes_suggestion_selection = self
-                    .notes_suggestion_selection
-                    .min(self.notes_suggestions.len().saturating_sub(1));
+                self.notes.suggestions = results;
+                self.notes.suggestion_selection = self
+                    .notes.suggestion_selection
+                    .min(self.notes.suggestions.len().saturating_sub(1));
             }
             Err(_) => {
-                self.notes_suggestions.clear();
-                self.notes_suggestion_selection = 0;
+                self.notes.suggestions.clear();
+                self.notes.suggestion_selection = 0;
             }
         }
     }
     pub fn move_note_suggestion(&mut self, direction: SelectionDirection) {
-        if self.notes_suggestions.is_empty() {
-            self.notes_suggestion_selection = 0;
+        if self.notes.suggestions.is_empty() {
+            self.notes.suggestion_selection = 0;
             return;
         }
 
-        self.notes_suggestion_selection = match direction {
-            SelectionDirection::Previous => self.notes_suggestion_selection.saturating_sub(1),
-            SelectionDirection::Next => (self.notes_suggestion_selection + 1)
-                .min(self.notes_suggestions.len().saturating_sub(1)),
+        self.notes.suggestion_selection = match direction {
+            SelectionDirection::Previous => self.notes.suggestion_selection.saturating_sub(1),
+            SelectionDirection::Next => (self.notes.suggestion_selection + 1)
+                .min(self.notes.suggestions.len().saturating_sub(1)),
         };
     }
     pub fn accept_note_suggestion(&mut self) {
         let Some(suggestion) = self
-            .notes_suggestions
-            .get(self.notes_suggestion_selection)
+            .notes.suggestions
+            .get(self.notes.suggestion_selection)
             .cloned()
         else {
             return;
         };
-        let Some(draft) = &mut self.notes_draft else {
+        let Some(draft) = &mut self.notes.draft else {
             return;
         };
 
@@ -260,8 +276,8 @@ impl App {
         draft.body.push_str(&suggestion.symbol);
         draft.body.push(' ');
 
-        self.notes_suggestions.clear();
-        self.notes_suggestion_selection = 0;
+        self.notes.suggestions.clear();
+        self.notes.suggestion_selection = 0;
     }
     pub(crate) fn extract_note_tickers(&self, body: &str) -> Vec<String> {
         let Ok(connection) = db::open(&self.ticker_db_path) else {
@@ -296,10 +312,10 @@ impl App {
         let Some(note) = self.notes_selected_row() else {
             return;
         };
-        self.pending_note_delete = Some(note.id);
+        self.notes.pending_delete = Some(note.id);
     }
     pub fn confirm_delete_note(&mut self) {
-        let Some(id) = self.pending_note_delete.take() else {
+        let Some(id) = self.notes.pending_delete.take() else {
             return;
         };
         if let Ok(connection) = db::open(&self.ticker_db_path) {
@@ -307,13 +323,13 @@ impl App {
         }
 
         let visible = self.notes_visible().len();
-        if self.notes_selection >= visible {
-            self.notes_selection = visible.saturating_sub(1);
+        if self.notes.selection >= visible {
+            self.notes.selection = visible.saturating_sub(1);
         }
         self.sync_notes_scroll(6);
     }
     pub fn cancel_delete_note(&mut self) {
-        self.pending_note_delete = None;
+        self.notes.pending_delete = None;
     }
     pub fn begin_notes_search(&mut self) {
         self.begin_text_input(InputTarget::NotesSearch);
@@ -324,11 +340,11 @@ impl App {
             .unwrap_or_default()
     }
     pub fn jump_to_notes_for_symbol(&mut self, symbol: &str) {
-        self.notes_tab = NotesFilterTab::Tickers;
-        self.notes_ticker_filter = Some(symbol.to_string());
-        self.notes_search_query.clear();
-        self.notes_selection = 0;
-        self.notes_scroll = 0;
+        self.notes.tab = NotesFilterTab::Tickers;
+        self.notes.ticker_filter = Some(symbol.to_string());
+        self.notes.search_query.clear();
+        self.notes.selection = 0;
+        self.notes.scroll = 0;
         self.set_panel_content(PanelId::Notes, WindowKind::Notes);
         self.focus_panel(PanelId::Notes);
     }

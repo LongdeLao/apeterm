@@ -356,16 +356,7 @@ pub struct App {
     pub collapsed_watchlist_news: HashSet<String>,
     pub(crate) known_watchlist_news_symbols: HashSet<String>,
     pub(crate) last_news_refresh: Option<Instant>,
-    pub notes_tab: NotesFilterTab,
-    pub notes_selection: usize,
-    pub notes_scroll: usize,
-    pub notes_search_query: String,
-    pub notes_ticker_filter: Option<String>,
-    pub notes_insert_mode: bool,
-    pub notes_draft: Option<NotesDraft>,
-    pub notes_suggestions: Vec<SearchResult>,
-    pub notes_suggestion_selection: usize,
-    pub pending_note_delete: Option<i64>,
+    pub notes: crate::features::notes::state::NotesFeature,
     pub sec: crate::features::sec::state::SecFeature,
     pub(crate) financial_juice_cooldown_until: Option<Instant>,
     pub agent: AgentController,
@@ -451,16 +442,7 @@ impl App {
             collapsed_watchlist_news: HashSet::new(),
             known_watchlist_news_symbols: HashSet::new(),
             last_news_refresh: None,
-            notes_tab: NotesFilterTab::All,
-            notes_selection: 0,
-            notes_scroll: 0,
-            notes_search_query: String::new(),
-            notes_ticker_filter: None,
-            notes_insert_mode: false,
-            notes_draft: None,
-            notes_suggestions: Vec::new(),
-            notes_suggestion_selection: 0,
-            pending_note_delete: None,
+            notes: Default::default(),
             sec: Default::default(),
             financial_juice_cooldown_until: None,
             agent: AgentController::new(&config.llm),
@@ -609,10 +591,10 @@ impl App {
             // Notes editing is fully handled in event.rs before this dispatcher runs.
             AppMode::TextInput(InputTarget::Notes) => {}
             AppMode::TextInput(InputTarget::NotesSearch) => {
-                self.notes_search_query.clear();
-                self.notes_ticker_filter = None;
-                self.notes_selection = 0;
-                self.notes_scroll = 0;
+                self.notes.search_query.clear();
+                self.notes.ticker_filter = None;
+                self.notes.selection = 0;
+                self.notes.scroll = 0;
                 self.clear_text_input_mode();
             }
             AppMode::Normal => {}
@@ -676,10 +658,10 @@ impl App {
             }
             AppMode::TextInput(InputTarget::Notes) => {}
             AppMode::TextInput(InputTarget::NotesSearch) => {
-                self.notes_search_query.push(character);
-                self.notes_ticker_filter = None;
-                self.notes_selection = 0;
-                self.notes_scroll = 0;
+                self.notes.search_query.push(character);
+                self.notes.ticker_filter = None;
+                self.notes.selection = 0;
+                self.notes.scroll = 0;
             }
             AppMode::Normal => {}
         }
@@ -717,10 +699,10 @@ impl App {
             }
             AppMode::TextInput(InputTarget::Notes) => {}
             AppMode::TextInput(InputTarget::NotesSearch) => {
-                self.notes_search_query.pop();
-                self.notes_ticker_filter = None;
-                self.notes_selection = 0;
-                self.notes_scroll = 0;
+                self.notes.search_query.pop();
+                self.notes.ticker_filter = None;
+                self.notes.selection = 0;
+                self.notes.scroll = 0;
             }
             AppMode::Normal => {}
         }
