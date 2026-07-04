@@ -1,3 +1,10 @@
+//! High-level app state and feature coordination.
+//!
+//! `App` owns all runtime state. Per-feature state and behavior live in the
+//! `*_feature.rs` submodules as focused `impl App` blocks; rendering belongs
+//! in `pages/*`, input routing in `event.rs`. `plugins::registry` maps each
+//! feature area to its modules.
+
 use std::{collections::HashSet, path::PathBuf, sync::mpsc::Receiver, time::Instant};
 
 use serde::{Deserialize, Serialize};

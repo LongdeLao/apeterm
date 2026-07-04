@@ -1,3 +1,7 @@
+//! Page rendering. Modules here draw views from `App` state and should not
+//! mutate it or hold feature business logic — that belongs in
+//! `app/*_feature.rs` or the feature's own module.
+
 pub mod agent;
 pub mod calendar;
 pub mod dashboard;

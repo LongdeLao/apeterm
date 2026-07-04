@@ -1,3 +1,9 @@
+//! Keyboard/input routing.
+//!
+//! This module translates terminal events into calls on `App`. It should stay
+//! free of feature business logic — put that in `app/*_feature.rs` or the
+//! feature's own module (see `plugins::registry` for the map of feature areas).
+
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::app::{
