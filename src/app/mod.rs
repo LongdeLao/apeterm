@@ -337,7 +337,7 @@ pub struct App {
     pub backend_insight_status: Option<String>,
     pub(crate) backend_insight_receiver: Option<Receiver<BackendInsightEvent>>,
     pub search_message: Option<String>,
-    pub settings_selection: usize,
+    pub settings: crate::features::settings::state::SettingsFeature,
     pub reset_confirmation: Option<TextInput>,
     pub watchlist_editor: Option<WatchlistEditor>,
     pub watchlist_suggestions: Vec<SearchResult>,
@@ -439,7 +439,7 @@ impl App {
             backend_insight_status: None,
             backend_insight_receiver: None,
             search_message: None,
-            settings_selection: 0,
+            settings: Default::default(),
             reset_confirmation: None,
             watchlist_editor: None,
             watchlist_suggestions: Vec::new(),
@@ -575,8 +575,8 @@ impl App {
             self.mode = AppMode::Normal;
             self.page = self.return_page.take().unwrap_or(Page::Dashboard);
         } else if self.page == Page::Settings {
-            if self.reset_confirmation.is_some() {
-                self.reset_confirmation = None;
+            if self.settings.reset_confirmation.is_some() {
+                self.settings.reset_confirmation = None;
                 self.clear_text_input_mode();
             } else {
                 self.page = self.return_page.take().unwrap_or(Page::Dashboard);
@@ -609,7 +609,7 @@ impl App {
             }
             AppMode::TextInput(InputTarget::Search) => self.clear_text_input_mode(),
             AppMode::TextInput(InputTarget::ResetConfirmation) => {
-                self.reset_confirmation = None;
+                self.settings.reset_confirmation = None;
                 self.clear_text_input_mode();
             }
             AppMode::TextInput(InputTarget::Watchlist) => {
@@ -641,7 +641,7 @@ impl App {
             }
             AppMode::TextInput(InputTarget::ResetConfirmation) => {
                 if self
-                    .reset_confirmation
+                    .settings.reset_confirmation
                     .as_ref()
                     .is_some_and(|input| input.input == "reset")
                 {
@@ -670,7 +670,7 @@ impl App {
                 self.refresh_search();
             }
             AppMode::TextInput(InputTarget::ResetConfirmation) => {
-                if let Some(input) = &mut self.reset_confirmation {
+                if let Some(input) = &mut self.settings.reset_confirmation {
                     input.input.push(character);
                 }
             }
@@ -709,7 +709,7 @@ impl App {
                 self.refresh_search();
             }
             AppMode::TextInput(InputTarget::ResetConfirmation) => {
-                if let Some(input) = &mut self.reset_confirmation {
+                if let Some(input) = &mut self.settings.reset_confirmation {
                     input.input.pop();
                 }
             }

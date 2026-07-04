@@ -102,7 +102,7 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
             if !is_control
                 && !app.is_editing_watchlist()
                 && app.page != Page::Search
-                && (app.page != Page::Settings || app.reset_confirmation.is_none()) =>
+                && (app.page != Page::Settings || app.settings.reset_confirmation.is_none()) =>
         {
             app.should_quit = true
         }

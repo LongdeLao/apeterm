@@ -46,7 +46,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     frame.render_widget(title, chunks[0]);
 
     render_rows(frame, app, chunks[1]);
-    if app.reset_confirmation.is_some() {
+    if app.settings.reset_confirmation.is_some() {
         render_reset_confirmation(frame, app);
     }
 }
@@ -55,7 +55,7 @@ fn render_rows(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
     let rows = settings_rows(app).into_iter().enumerate().map(
         |(index, (item, label, value, adjustable, active))| {
-            let selected = app.settings_selection == index;
+            let selected = app.settings.selection == index;
             let is_reset = item == SettingsItem::Reset;
             let style = if is_reset && selected {
                 Style::default()
@@ -260,7 +260,7 @@ fn render_reset_confirmation(frame: &mut Frame, app: &App) {
     let background = theme.background.unwrap_or(Color::Black);
     let area = centered_rect(ui::content_area(frame.area(), app), 64, 9);
     let input = app
-        .reset_confirmation
+        .settings.reset_confirmation
         .as_ref()
         .map(|input| input.input.as_str())
         .unwrap_or_default();

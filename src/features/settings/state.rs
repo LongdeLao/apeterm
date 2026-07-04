@@ -1,6 +1,13 @@
 use crate::app::*;
 use crate::preferences::{PreferencePreset, UserPreferences};
 
+/// UI state owned by the settings page.
+#[derive(Debug, Default)]
+pub struct SettingsFeature {
+    pub selection: usize,
+    pub reset_confirmation: Option<TextInput>,
+}
+
 impl App {
     pub fn open_settings(&mut self) {
         if self.page != Page::Settings {
@@ -10,33 +17,33 @@ impl App {
         self.page = Page::Settings;
         self.show_help = false;
         self.pending_split = false;
-        self.reset_confirmation = None;
+        self.settings.reset_confirmation = None;
         self.selected_news = None;
     }
     pub fn selected_settings_item(&self) -> SettingsItem {
-        SettingsItem::ALL[self.settings_selection.min(SettingsItem::ALL.len() - 1)]
+        SettingsItem::ALL[self.settings.selection.min(SettingsItem::ALL.len() - 1)]
     }
     pub fn active_preference_preset(&self) -> PreferencePreset {
         self.preferences.preset()
     }
     pub fn move_settings_selection(&mut self, direction: SelectionDirection) {
-        if self.reset_confirmation.is_some() {
+        if self.settings.reset_confirmation.is_some() {
             return;
         }
 
-        self.settings_selection = match direction {
+        self.settings.selection = match direction {
             SelectionDirection::Previous => {
-                if self.settings_selection == 0 {
+                if self.settings.selection == 0 {
                     SettingsItem::ALL.len() - 1
                 } else {
-                    self.settings_selection - 1
+                    self.settings.selection - 1
                 }
             }
-            SelectionDirection::Next => (self.settings_selection + 1) % SettingsItem::ALL.len(),
+            SelectionDirection::Next => (self.settings.selection + 1) % SettingsItem::ALL.len(),
         };
     }
     pub fn activate_settings_item(&mut self) {
-        if let Some(input) = &self.reset_confirmation {
+        if let Some(input) = &self.settings.reset_confirmation {
             if input.input == "reset" {
                 self.reset_settings_to_defaults();
             }
@@ -61,7 +68,7 @@ impl App {
             SettingsItem::Theme => self.set_theme(self.theme_name.next()),
             SettingsItem::Onboarding => self.toggle_onboarding_preference(),
             SettingsItem::Reset => {
-                self.reset_confirmation = Some(TextInput {
+                self.settings.reset_confirmation = Some(TextInput {
                     input: String::new(),
                 });
                 self.begin_text_input(InputTarget::ResetConfirmation);
@@ -69,7 +76,7 @@ impl App {
         }
     }
     pub fn adjust_settings_item(&mut self, direction: SelectionDirection) {
-        if self.reset_confirmation.is_some() {
+        if self.settings.reset_confirmation.is_some() {
             return;
         }
 
@@ -113,7 +120,7 @@ impl App {
         self.config.locale = self.preferences.language.locale();
         self.config.theme = self.theme_name;
         self.config.onboarding.completed = false;
-        self.reset_confirmation = None;
+        self.settings.reset_confirmation = None;
         self.clear_text_input_mode();
         self.apply_preferences();
         let _ = self.config.save();
