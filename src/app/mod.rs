@@ -1,8 +1,8 @@
 //! High-level app state and feature coordination.
 //!
 //! `App` owns all runtime state. Per-feature state and behavior live in the
-//! `*_feature.rs` submodules as focused `impl App` blocks; rendering belongs
-//! in `pages/*`, input routing in `event.rs`. `plugins::registry` maps each
+//! `features/*/state.rs` modules as focused `impl App` blocks; rendering belongs
+//! in `features/*/view.rs`, input routing in `event.rs`. `plugins::registry` maps each
 //! feature area to its modules.
 
 use std::{collections::HashSet, path::PathBuf, sync::mpsc::Receiver, time::Instant};
@@ -16,20 +16,10 @@ use crate::{
     i18n::{I18n, Key, Locale},
     market::{MarketEvent, MarketSession},
     news::{FetchResult, NewsItem},
-    preferences::{
-        AgentStyle, Experience, ExplanationLevel, Language, PreferencePreset, Tone, UserPreferences,
-    },
+    preferences::{AgentStyle, Experience, ExplanationLevel, Language, Tone, UserPreferences},
     quotes::{Quote, update_market_quotes},
     search::{InstrumentDetails, LiveInstrumentDetails, SearchResult},
 };
-
-mod dashboard;
-mod news_feature;
-mod notes_feature;
-mod search_feature;
-mod settings_feature;
-mod spotlight_panel;
-mod watchlist_feature;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -433,7 +423,7 @@ impl App {
             search_results: Vec::new(),
             search_selection: 0,
             search_scroll: 0,
-            search_limit: search_feature::SEARCH_PAGE_SIZE,
+            search_limit: crate::features::search::state::SEARCH_PAGE_SIZE,
             search_asset_kind: SearchAssetKind::Stocks,
             selected_details: None,
             selected_live_details: None,

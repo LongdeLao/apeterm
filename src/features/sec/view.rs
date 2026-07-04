@@ -10,9 +10,9 @@ use ratatui::{
 use crate::{
     app::{App, PanelId, SecTab},
     db,
-    pages::panel,
     sec::types::{EntityKind, HoldingDeltaKind, SecEntity},
     theme::current_theme,
+    ui::panel,
 };
 
 const NEGATIVE: Color = Color::Rgb(239, 68, 68);

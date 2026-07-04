@@ -1,4 +1,5 @@
-use super::*;
+use crate::app::*;
+use crate::preferences::{PreferencePreset, UserPreferences};
 
 impl App {
     pub fn open_settings(&mut self) {

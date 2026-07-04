@@ -11,8 +11,8 @@ use crate::{
     app::{App, NewsFilterTab, NewsListRow, PanelId},
     i18n::Key,
     news::{NewsItem, NewsPriority},
-    pages::panel,
     theme::current_theme,
+    ui::panel,
 };
 
 const TIME_COL_WIDTH: u16 = 5;

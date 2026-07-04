@@ -10,10 +10,10 @@ use unicode_width::UnicodeWidthStr;
 use crate::{
     app::{App, InputTarget, SettingsItem},
     i18n::{Key, Locale},
-    pages::fill::Fill,
     preferences::{AgentStyle, Experience, ExplanationLevel, Language, PreferencePreset, Tone},
     theme::current_theme,
     ui,
+    ui::fill::Fill,
 };
 
 pub fn render(frame: &mut Frame, app: &App) {

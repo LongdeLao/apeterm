@@ -1,6 +1,6 @@
 use ratatui::{Frame, layout::Rect};
 
-use crate::{app::App, app::PanelId, i18n::Key, pages::panel};
+use crate::{app::App, app::PanelId, i18n::Key, ui::panel};
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     panel::render(

@@ -13,9 +13,9 @@ use crate::{
     app::{App, InputTarget, PanelId, WatchlistEditMode, WatchlistEditRow, WatchlistKind},
     i18n::Key,
     market::MarketSession,
-    pages::panel,
     quotes::{PriceDirection, Quote},
     theme::current_theme,
+    ui::panel,
 };
 
 const SYMBOL_WIDTH: usize = 8;

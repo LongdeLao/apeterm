@@ -11,8 +11,8 @@ use crate::{
     app::{App, InputTarget, NotesFilterTab, PanelId},
     db::notes_repo::NoteRow,
     i18n::Key,
-    pages::panel,
     theme::{Theme, current_theme},
+    ui::panel,
 };
 
 const PIN_COL_WIDTH: u16 = 2;

@@ -1,4 +1,4 @@
-use super::*;
+use crate::app::*;
 use crate::{config::NamedWatchlist, search};
 
 impl App {

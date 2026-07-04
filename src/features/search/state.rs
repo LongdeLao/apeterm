@@ -1,5 +1,5 @@
-use super::watchlist_feature::normalize_symbol;
-use super::*;
+use crate::app::*;
+use crate::features::watchlist::state::normalize_symbol;
 use crate::{
     i18n::Key,
     metrics::{MetricId, visible_key_stats},

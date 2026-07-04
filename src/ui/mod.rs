@@ -8,8 +8,12 @@ use ratatui::{
 use crate::{
     app::{App, Page, PanelId, WatchlistEditMode, WindowKind},
     features::agent::view as agent,
+    features::dashboard::view as dashboard,
+    features::onboarding::view as onboarding,
+    features::search::view as search,
+    features::settings::view as settings,
+    features::spotlight::view as spotlight,
     i18n::Key,
-    pages::{dashboard, onboarding, search, settings, spotlight},
     theme::current_theme,
 };
 
@@ -158,3 +162,6 @@ fn footer_text(app: &App) -> String {
         _ => app.t(Key::AppFooter).to_string(),
     }
 }
+
+pub mod fill;
+pub mod panel;

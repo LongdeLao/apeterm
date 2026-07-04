@@ -13,7 +13,6 @@ mod import;
 mod market;
 mod metrics;
 mod news;
-mod pages;
 // Metadata-only for now; nothing consumes the registry outside of tests, so
 // suppress unused warnings until a first caller lands.
 #[allow(dead_code, unused_imports)]

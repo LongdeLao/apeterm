@@ -8,11 +8,15 @@ use ratatui::{
 
 use crate::{
     app::{App, PanelId, WindowKind},
+    features::calendar::view as calendar,
+    features::news::view as news,
+    features::notes::view as notes,
     features::sec::view as sec,
+    features::watchlist::view as watchlist,
     i18n::Key,
-    pages::{calendar, fill::Fill, news, notes, watchlist},
     theme::current_theme,
     ui,
+    ui::fill::Fill,
 };
 
 pub fn render(frame: &mut Frame, app: &App) {

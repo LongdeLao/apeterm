@@ -22,11 +22,11 @@ use crate::{
     metrics::{
         MetricId, metric_explanation_key, metric_label_key, visible_key_stats, visible_metrics,
     },
-    pages::fill::Fill,
     preferences::ExplanationLevel,
     search::{HistoryPoint, LiveInstrumentDetails},
     theme::current_theme,
     ui,
+    ui::fill::Fill,
 };
 
 pub fn render(frame: &mut Frame, app: &App) {

@@ -1,4 +1,5 @@
-use super::*;
+use crate::app::*;
+use crate::i18n::Key;
 
 impl App {
     pub fn focus_panel(&mut self, panel_id: PanelId) {
