@@ -125,7 +125,7 @@ fn push_watchlist_rows<'a>(
         .unwrap_or(SYMBOL_WIDTH)
         .max(SYMBOL_WIDTH);
 
-    if app.watchlist_editor.is_some() {
+    if app.watchlist.editor.is_some() {
         lines.push(edit_action_line(
             app,
             WatchlistEditRow::AddStock,
@@ -141,7 +141,7 @@ fn push_watchlist_rows<'a>(
 
     for (index, symbol) in app.stock_watchlist().iter().enumerate() {
         let quote = app
-            .stock_quotes
+            .watchlist.stock_quotes
             .iter()
             .find(|quote| quote.symbol == *symbol);
         lines.push(symbol_line(
@@ -159,7 +159,7 @@ fn push_watchlist_rows<'a>(
 
     for (index, symbol) in app.crypto_watchlist().iter().enumerate() {
         let quote = app
-            .crypto_quotes
+            .watchlist.crypto_quotes
             .iter()
             .find(|quote| quote.symbol == *symbol);
         lines.push(symbol_line(
@@ -204,7 +204,7 @@ fn symbol_line<'a>(
 ) -> Line<'a> {
     let theme = current_theme(app.theme_name);
     let selected = app.selected_watchlist_row() == Some(row);
-    let prefix = if app.watchlist_editor.is_some() {
+    let prefix = if app.watchlist.editor.is_some() {
         if selected { "> " } else { "  " }
     } else {
         ""
@@ -361,7 +361,7 @@ fn format_compact_volume(value: u64) -> String {
 }
 
 fn render_market_state(frame: &mut Frame, app: &App, area: Rect) {
-    let (icon, label, color) = match app.stock_market_session {
+    let (icon, label, color) = match app.watchlist.stock_market_session {
         Some(MarketSession::PreMarket) => (
             "\u{F05A8}",
             app.t(Key::WatchlistMarketPreMarket),
@@ -405,7 +405,7 @@ fn format_symbol_label(
 }
 
 fn watchlist_input_active(app: &App) -> bool {
-    app.watchlist_editor
+    app.watchlist.editor
         .as_ref()
         .and_then(|editor| editor.mode.as_ref())
         .is_some()
@@ -415,7 +415,7 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
     let background = theme.background.unwrap_or(Color::Black);
     let Some(mode) = app
-        .watchlist_editor
+        .watchlist.editor
         .as_ref()
         .and_then(|editor| editor.mode.as_ref())
     else {
@@ -438,7 +438,7 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
         }
         WatchlistEditMode::CreateWatchlist { input } => ("New Watchlist", input.as_str()),
     };
-    let suggestion_count = app.watchlist_suggestions.len().min(6) as u16;
+    let suggestion_count = app.watchlist.suggestions.len().min(6) as u16;
     let modal = centered_rect(area, 62, 3 + suggestion_count);
     let label_text = format!("{label}: ");
     let mut lines = vec![Line::from(vec![
@@ -451,8 +451,8 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(input, Style::default().fg(theme.foreground)),
     ])];
 
-    for (index, suggestion) in app.watchlist_suggestions.iter().take(6).enumerate() {
-        let selected = index == app.watchlist_suggestion_selection;
+    for (index, suggestion) in app.watchlist.suggestions.iter().take(6).enumerate() {
+        let selected = index == app.watchlist.suggestion_selection;
         let style = if selected {
             Style::default()
                 .fg(theme.background.unwrap_or(Color::Black))

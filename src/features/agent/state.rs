@@ -8,7 +8,7 @@ impl App {
         self.begin_text_input(InputTarget::Agent);
         self.show_help = false;
         self.pending_split = false;
-        self.watchlist_editor = None;
+        self.watchlist.editor = None;
         self.agent.auto_scroll = true;
     }
     pub fn close_agent(&mut self) {

@@ -2,6 +2,18 @@ use crate::app::*;
 use crate::config::NamedWatchlist;
 use crate::features::search::engine as search;
 
+/// UI + runtime state owned by the watchlist feature.
+#[derive(Debug, Default)]
+pub struct WatchlistFeature {
+    pub editor: Option<WatchlistEditor>,
+    pub suggestions: Vec<search::SearchResult>,
+    pub suggestion_selection: usize,
+    pub market_refresh_requested: bool,
+    pub crypto_quotes: Vec<crate::features::watchlist::quotes::Quote>,
+    pub stock_quotes: Vec<crate::features::watchlist::quotes::Quote>,
+    pub stock_market_session: Option<crate::features::watchlist::market::MarketSession>,
+}
+
 impl App {
     pub fn stock_watchlist(&self) -> &[String] {
         &self.active_watchlist().stock_symbols
@@ -58,27 +70,27 @@ impl App {
             .filter(|name| !name.trim().is_empty())
     }
     pub fn is_editing_watchlist(&self) -> bool {
-        self.watchlist_editor.is_some()
+        self.watchlist.editor.is_some()
     }
     pub fn open_watchlist_editor(&mut self) {
         self.clear_text_input_mode();
-        self.watchlist_editor = Some(WatchlistEditor {
+        self.watchlist.editor = Some(WatchlistEditor {
             selection: 0,
             mode: None,
         });
     }
     pub fn close_watchlist_editor(&mut self) {
-        if let Some(editor) = &mut self.watchlist_editor {
+        if let Some(editor) = &mut self.watchlist.editor {
             if editor.mode.is_some() {
                 editor.mode = None;
-                self.watchlist_suggestions.clear();
-                self.watchlist_suggestion_selection = 0;
+                self.watchlist.suggestions.clear();
+                self.watchlist.suggestion_selection = 0;
                 self.clear_text_input_mode();
                 return;
             }
         }
 
-        self.watchlist_editor = None;
+        self.watchlist.editor = None;
     }
     pub fn watchlist_rows(&self) -> Vec<WatchlistEditRow> {
         let mut rows = Vec::new();
@@ -89,12 +101,12 @@ impl App {
         rows
     }
     pub fn selected_watchlist_row(&self) -> Option<WatchlistEditRow> {
-        let editor = self.watchlist_editor.as_ref()?;
+        let editor = self.watchlist.editor.as_ref()?;
         self.watchlist_rows().get(editor.selection).copied()
     }
     pub fn move_watchlist_selection(&mut self, direction: SelectionDirection) {
         if self
-            .watchlist_editor
+            .watchlist.editor
             .as_ref()
             .is_some_and(|editor| editor.mode.is_some())
         {
@@ -102,7 +114,7 @@ impl App {
         }
 
         let count = self.watchlist_rows().len();
-        let Some(editor) = &mut self.watchlist_editor else {
+        let Some(editor) = &mut self.watchlist.editor else {
             return;
         };
 
@@ -119,7 +131,7 @@ impl App {
     }
     pub fn activate_watchlist_editor(&mut self) {
         if self
-            .watchlist_editor
+            .watchlist.editor
             .as_ref()
             .is_some_and(|editor| editor.mode.is_some())
         {
@@ -161,7 +173,7 @@ impl App {
         let _ = self.config.save();
     }
     pub fn begin_watchlist_add(&mut self, kind: WatchlistKind) {
-        if let Some(editor) = &mut self.watchlist_editor {
+        if let Some(editor) = &mut self.watchlist.editor {
             editor.mode = Some(WatchlistEditMode::Add {
                 kind,
                 input: String::new(),
@@ -171,14 +183,14 @@ impl App {
         self.refresh_watchlist_suggestions();
     }
     pub fn begin_watchlist_create(&mut self) {
-        if let Some(editor) = &mut self.watchlist_editor {
+        if let Some(editor) = &mut self.watchlist.editor {
             editor.mode = Some(WatchlistEditMode::CreateWatchlist {
                 input: String::new(),
             });
         }
         self.begin_text_input(InputTarget::Watchlist);
-        self.watchlist_suggestions.clear();
-        self.watchlist_suggestion_selection = 0;
+        self.watchlist.suggestions.clear();
+        self.watchlist.suggestion_selection = 0;
     }
     pub(crate) fn begin_watchlist_alias_edit(&mut self, kind: WatchlistKind, index: usize) {
         let symbol = match kind {
@@ -192,12 +204,12 @@ impl App {
             .unwrap_or(symbol.as_str())
             .to_string();
 
-        if let Some(editor) = &mut self.watchlist_editor {
+        if let Some(editor) = &mut self.watchlist.editor {
             editor.mode = Some(WatchlistEditMode::EditAlias { symbol, input });
         }
         self.begin_text_input(InputTarget::Watchlist);
-        self.watchlist_suggestions.clear();
-        self.watchlist_suggestion_selection = 0;
+        self.watchlist.suggestions.clear();
+        self.watchlist.suggestion_selection = 0;
     }
     pub fn begin_selected_watchlist_ticker_change(&mut self) {
         match self.selected_watchlist_row() {
@@ -218,33 +230,33 @@ impl App {
         .cloned()
         .unwrap_or_default();
 
-        if let Some(editor) = &mut self.watchlist_editor {
+        if let Some(editor) = &mut self.watchlist.editor {
             editor.mode = Some(WatchlistEditMode::ChangeTicker { kind, index, input });
         }
         self.begin_text_input(InputTarget::Watchlist);
         self.refresh_watchlist_suggestions();
     }
     pub fn move_watchlist_suggestion(&mut self, direction: SelectionDirection) {
-        if self.watchlist_suggestions.is_empty() {
-            self.watchlist_suggestion_selection = 0;
+        if self.watchlist.suggestions.is_empty() {
+            self.watchlist.suggestion_selection = 0;
             return;
         }
 
-        self.watchlist_suggestion_selection = match direction {
-            SelectionDirection::Previous => self.watchlist_suggestion_selection.saturating_sub(1),
-            SelectionDirection::Next => (self.watchlist_suggestion_selection + 1)
-                .min(self.watchlist_suggestions.len().saturating_sub(1)),
+        self.watchlist.suggestion_selection = match direction {
+            SelectionDirection::Previous => self.watchlist.suggestion_selection.saturating_sub(1),
+            SelectionDirection::Next => (self.watchlist.suggestion_selection + 1)
+                .min(self.watchlist.suggestions.len().saturating_sub(1)),
         };
     }
     pub(crate) fn selected_watchlist_input_symbol(&self, input: &str) -> Option<String> {
-        self.watchlist_suggestions
-            .get(self.watchlist_suggestion_selection)
+        self.watchlist.suggestions
+            .get(self.watchlist.suggestion_selection)
             .map(|suggestion| suggestion.symbol.clone())
             .or_else(|| normalize_symbol(input))
     }
     pub(crate) fn save_watchlist_input(&mut self) {
         let Some(mode) = self
-            .watchlist_editor
+            .watchlist.editor
             .as_mut()
             .and_then(|editor| editor.mode.take())
         else {
@@ -308,8 +320,8 @@ impl App {
         self.cleanup_watchlist_aliases();
         self.retain_configured_quotes();
         self.clamp_watchlist_selection();
-        self.watchlist_suggestions.clear();
-        self.watchlist_suggestion_selection = 0;
+        self.watchlist.suggestions.clear();
+        self.watchlist.suggestion_selection = 0;
         self.clear_text_input_mode();
         self.request_market_refresh();
         let _ = self.config.save();
@@ -403,19 +415,19 @@ impl App {
     pub(crate) fn retain_configured_quotes(&mut self) {
         let stock_symbols = self.stock_watchlist().to_vec();
         let crypto_symbols = self.crypto_watchlist().to_vec();
-        self.stock_quotes
+        self.watchlist.stock_quotes
             .retain(|quote| stock_symbols.contains(&quote.symbol));
-        self.crypto_quotes
+        self.watchlist.crypto_quotes
             .retain(|quote| crypto_symbols.contains(&quote.symbol));
     }
     pub(crate) fn refresh_watchlist_suggestions(&mut self) {
         let Some(mode) = self
-            .watchlist_editor
+            .watchlist.editor
             .as_ref()
             .and_then(|editor| editor.mode.as_ref())
         else {
-            self.watchlist_suggestions.clear();
-            self.watchlist_suggestion_selection = 0;
+            self.watchlist.suggestions.clear();
+            self.watchlist.suggestion_selection = 0;
             return;
         };
 
@@ -423,15 +435,15 @@ impl App {
             WatchlistEditMode::Add { kind, input }
             | WatchlistEditMode::ChangeTicker { kind, input, .. } => (*kind, input.as_str()),
             WatchlistEditMode::EditAlias { .. } | WatchlistEditMode::CreateWatchlist { .. } => {
-                self.watchlist_suggestions.clear();
-                self.watchlist_suggestion_selection = 0;
+                self.watchlist.suggestions.clear();
+                self.watchlist.suggestion_selection = 0;
                 return;
             }
         };
 
         if kind != WatchlistKind::Stock {
-            self.watchlist_suggestions.clear();
-            self.watchlist_suggestion_selection = 0;
+            self.watchlist.suggestions.clear();
+            self.watchlist.suggestion_selection = 0;
             return;
         }
 
@@ -439,14 +451,14 @@ impl App {
             .and_then(|connection| search::search_assets(&connection, input, &["stock", "etf"], 6))
         {
             Ok(results) => {
-                self.watchlist_suggestions = results;
-                self.watchlist_suggestion_selection = self
-                    .watchlist_suggestion_selection
-                    .min(self.watchlist_suggestions.len().saturating_sub(1));
+                self.watchlist.suggestions = results;
+                self.watchlist.suggestion_selection = self
+                    .watchlist.suggestion_selection
+                    .min(self.watchlist.suggestions.len().saturating_sub(1));
             }
             Err(_) => {
-                self.watchlist_suggestions.clear();
-                self.watchlist_suggestion_selection = 0;
+                self.watchlist.suggestions.clear();
+                self.watchlist.suggestion_selection = 0;
             }
         }
     }
@@ -470,11 +482,11 @@ impl App {
             .retain(|symbol, _| stock_symbols.contains(symbol) || crypto_symbols.contains(symbol));
     }
     pub(crate) fn request_market_refresh(&mut self) {
-        self.market_refresh_requested = true;
+        self.watchlist.market_refresh_requested = true;
     }
     pub(crate) fn clamp_watchlist_selection(&mut self) {
         let count = self.watchlist_rows().len();
-        if let Some(editor) = &mut self.watchlist_editor {
+        if let Some(editor) = &mut self.watchlist.editor {
             editor.selection = editor.selection.min(count.saturating_sub(1));
         }
     }

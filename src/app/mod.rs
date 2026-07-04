@@ -313,9 +313,7 @@ pub struct App {
     pub pending_split: bool,
     pub panel_contents: PanelContents,
     pub window_picker_index: usize,
-    pub crypto_quotes: Vec<Quote>,
-    pub stock_quotes: Vec<Quote>,
-    pub stock_market_session: Option<MarketSession>,
+    pub watchlist: crate::features::watchlist::state::WatchlistFeature,
     pub ticker_db_path: PathBuf,
     pub search_query: String,
     pub search_results: Vec<SearchResult>,
@@ -338,10 +336,6 @@ pub struct App {
     pub(crate) backend_insight_receiver: Option<Receiver<BackendInsightEvent>>,
     pub search_message: Option<String>,
     pub settings: crate::features::settings::state::SettingsFeature,
-    pub watchlist_editor: Option<WatchlistEditor>,
-    pub watchlist_suggestions: Vec<SearchResult>,
-    pub watchlist_suggestion_selection: usize,
-    pub market_refresh_requested: bool,
     pub news: crate::features::news::state::NewsFeature,
     pub notes: crate::features::notes::state::NotesFeature,
     pub sec: crate::features::sec::state::SecFeature,
@@ -384,9 +378,7 @@ impl App {
             pending_split: false,
             panel_contents: PanelContents::default(),
             window_picker_index: 0,
-            crypto_quotes: Vec::new(),
-            stock_quotes: Vec::new(),
-            stock_market_session: None,
+            watchlist: Default::default(),
             ticker_db_path: config.ticker_db_path.clone(),
             search_query: String::new(),
             search_results: Vec::new(),
@@ -409,10 +401,6 @@ impl App {
             backend_insight_receiver: None,
             search_message: None,
             settings: Default::default(),
-            watchlist_editor: None,
-            watchlist_suggestions: Vec::new(),
-            watchlist_suggestion_selection: 0,
-            market_refresh_requested: false,
             news: Default::default(),
             notes: Default::default(),
             sec: Default::default(),
@@ -466,15 +454,15 @@ impl App {
     }
     pub fn handle_market_event(&mut self, event: MarketEvent) {
         update_market_quotes(
-            &mut self.crypto_quotes,
-            &mut self.stock_quotes,
-            &mut self.stock_market_session,
+            &mut self.watchlist.crypto_quotes,
+            &mut self.watchlist.stock_quotes,
+            &mut self.watchlist.stock_market_session,
             event,
         );
     }
     pub fn take_market_refresh_request(&mut self) -> bool {
-        let requested = self.market_refresh_requested;
-        self.market_refresh_requested = false;
+        let requested = self.watchlist.market_refresh_requested;
+        self.watchlist.market_refresh_requested = false;
         requested
     }
     pub fn toggle_help(&mut self) {
@@ -551,11 +539,11 @@ impl App {
                 self.clear_text_input_mode();
             }
             AppMode::TextInput(InputTarget::Watchlist) => {
-                if let Some(editor) = &mut self.watchlist_editor {
+                if let Some(editor) = &mut self.watchlist.editor {
                     editor.mode = None;
                 }
-                self.watchlist_suggestions.clear();
-                self.watchlist_suggestion_selection = 0;
+                self.watchlist.suggestions.clear();
+                self.watchlist.suggestion_selection = 0;
                 self.clear_text_input_mode();
             }
             // Notes editing is fully handled in event.rs before this dispatcher runs.
@@ -614,7 +602,7 @@ impl App {
             }
             AppMode::TextInput(InputTarget::Watchlist) => {
                 match self
-                    .watchlist_editor
+                    .watchlist.editor
                     .as_mut()
                     .and_then(|editor| editor.mode.as_mut())
                 {
@@ -653,7 +641,7 @@ impl App {
             }
             AppMode::TextInput(InputTarget::Watchlist) => {
                 match self
-                    .watchlist_editor
+                    .watchlist.editor
                     .as_mut()
                     .and_then(|editor| editor.mode.as_mut())
                 {

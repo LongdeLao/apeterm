@@ -117,7 +117,7 @@ fn footer_text(app: &App) -> String {
         return app.t(Key::NotesSearchFooter).to_string();
     }
 
-    if let Some(editor) = &app.watchlist_editor {
+    if let Some(editor) = &app.watchlist.editor {
         return match editor.mode {
             Some(WatchlistEditMode::Add { .. }) | Some(WatchlistEditMode::ChangeTicker { .. }) => {
                 app.t(Key::WatchlistEditInputFooter).to_string()
