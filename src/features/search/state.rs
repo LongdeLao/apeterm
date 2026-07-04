@@ -18,7 +18,7 @@ impl App {
         self.begin_text_input(InputTarget::Search);
         self.page = Page::Search;
         self.show_help = false;
-        self.pending_split = false;
+        self.dashboard.pending_split = false;
         self.news.selected = None;
         self.refresh_search();
     }

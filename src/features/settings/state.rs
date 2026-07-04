@@ -16,7 +16,7 @@ impl App {
         self.mode = AppMode::Normal;
         self.page = Page::Settings;
         self.show_help = false;
-        self.pending_split = false;
+        self.dashboard.pending_split = false;
         self.settings.reset_confirmation = None;
         self.news.selected = None;
     }

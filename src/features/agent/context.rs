@@ -17,7 +17,7 @@ pub fn build_context(app: &App) -> String {
     let _ = writeln!(context, "page: {page}");
 
     if app.page == Page::Dashboard {
-        let focused = match app.panel_content(app.focused_panel) {
+        let focused = match app.panel_content(app.dashboard.focused_panel) {
             WindowKind::News => "news",
             WindowKind::Watchlist => "watchlist",
             WindowKind::Calendar => "calendar",

@@ -7,7 +7,7 @@ impl App {
         self.agent.panel_open = true;
         self.begin_text_input(InputTarget::Agent);
         self.show_help = false;
-        self.pending_split = false;
+        self.dashboard.pending_split = false;
         self.watchlist.editor = None;
         self.agent.auto_scroll = true;
     }

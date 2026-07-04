@@ -138,7 +138,7 @@ fn footer_text(app: &App) -> String {
             app.t(Key::AgentFooter).to_string()
         }
         Page::Dashboard
-            if app.focused_panel == PanelId::Watchlist
+            if app.dashboard.focused_panel == PanelId::Watchlist
                 && app.panel_content(PanelId::Watchlist) == WindowKind::Watchlist =>
         {
             format!(
@@ -148,15 +148,15 @@ fn footer_text(app: &App) -> String {
             )
         }
         Page::Dashboard
-            if app.focused_panel == PanelId::News
+            if app.dashboard.focused_panel == PanelId::News
                 && app.panel_content(PanelId::News) == WindowKind::News =>
         {
             format!("{}  {}", app.t(Key::AppFooter), app.t(Key::NewsFooter))
         }
-        Page::Dashboard if app.panel_content(app.focused_panel) == WindowKind::Sec => {
+        Page::Dashboard if app.panel_content(app.dashboard.focused_panel) == WindowKind::Sec => {
             format!("{}  {}", app.t(Key::AppFooter), app.t(Key::SecFooter))
         }
-        Page::Dashboard if app.panel_content(app.focused_panel) == WindowKind::Notes => {
+        Page::Dashboard if app.panel_content(app.dashboard.focused_panel) == WindowKind::Notes => {
             format!("{}  {}", app.t(Key::AppFooter), app.t(Key::NotesFooter))
         }
         _ => app.t(Key::AppFooter).to_string(),

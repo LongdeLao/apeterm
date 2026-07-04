@@ -79,7 +79,7 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
                 if !is_control
                     && app.page != Page::Search
                     && !(app.page == Page::Dashboard
-                        && app.panel_content(app.focused_panel) == WindowKind::Notes) =>
+                        && app.panel_content(app.dashboard.focused_panel) == WindowKind::Notes) =>
             {
                 app.open_search();
                 return;
@@ -120,10 +120,10 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
                 app.activate_watchlist_editor();
             } else if app.page == Page::Onboarding {
                 app.advance_onboarding();
-            } else if app.page == Page::Dashboard && app.focused_panel == PanelId::News {
+            } else if app.page == Page::Dashboard && app.dashboard.focused_panel == PanelId::News {
                 app.open_selected_news();
             } else if app.page == Page::Dashboard
-                && app.panel_content(app.focused_panel) == WindowKind::Notes
+                && app.panel_content(app.dashboard.focused_panel) == WindowKind::Notes
             {
                 app.enter_note_insert_mode();
             } else if app.page == Page::Dashboard {
@@ -154,7 +154,7 @@ fn can_open_agent(app: &App) -> bool {
 /// these so e.g. `,` doesn't jump to Settings mid-command.
 fn blocks_global_shortcuts(app: &App) -> bool {
     app.is_editing_watchlist()
-        || app.pending_split
+        || app.dashboard.pending_split
         || app.is_choosing_window()
         || app.notes.pending_delete.is_some()
 }
@@ -188,7 +188,7 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
 
     let is_control = modifiers.contains(KeyModifiers::CONTROL);
 
-    if app.pending_split {
+    if app.dashboard.pending_split {
         match key_code {
             KeyCode::Char('h') => app.split_focused_panel(SplitDirection::Horizontal),
             KeyCode::Char('v') => app.split_focused_panel(SplitDirection::Vertical),
@@ -210,11 +210,11 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         return;
     }
 
-    if app.focused_panel == PanelId::News && handle_news_key(app, key_code) {
+    if app.dashboard.focused_panel == PanelId::News && handle_news_key(app, key_code) {
         return;
     }
 
-    if app.focused_panel == PanelId::Watchlist && handle_watchlist_panel_key(app, key_code) {
+    if app.dashboard.focused_panel == PanelId::Watchlist && handle_watchlist_panel_key(app, key_code) {
         return;
     }
 
@@ -260,7 +260,7 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         (KeyCode::Char('s'), true) => app.begin_split_command(),
         (KeyCode::Char('a'), true) => app.add_panel(),
         (KeyCode::Char('c'), true) => app.change_focused_panel_content(),
-        (KeyCode::Char('e'), false) if app.focused_panel == PanelId::Watchlist => {
+        (KeyCode::Char('e'), false) if app.dashboard.focused_panel == PanelId::Watchlist => {
             app.open_watchlist_editor()
         }
         (KeyCode::Char('x'), true) => app.close_focused_panel(),
@@ -304,7 +304,7 @@ fn handle_news_key(app: &mut App, key_code: KeyCode) -> bool {
 }
 
 fn handle_notes_key(app: &mut App, key_code: KeyCode) -> bool {
-    if app.panel_content(app.focused_panel) != WindowKind::Notes {
+    if app.panel_content(app.dashboard.focused_panel) != WindowKind::Notes {
         return false;
     }
 
@@ -358,10 +358,10 @@ fn handle_notes_key(app: &mut App, key_code: KeyCode) -> bool {
 }
 
 fn handle_sec_key(app: &mut App, key_code: KeyCode) -> bool {
-    if app.focused_panel != PanelId::Notes && app.focused_panel != PanelId::Calendar {
+    if app.dashboard.focused_panel != PanelId::Notes && app.dashboard.focused_panel != PanelId::Calendar {
         return false;
     }
-    if app.panel_content(app.focused_panel) != crate::app::WindowKind::Sec {
+    if app.panel_content(app.dashboard.focused_panel) != crate::app::WindowKind::Sec {
         return false;
     }
 
@@ -634,7 +634,7 @@ mod tests {
     fn slash_on_notes_panel_still_begins_notes_search_not_global_search() {
         let mut app = test_app();
         // The Notes panel slot shows Notes content by default.
-        app.focused_panel = PanelId::Notes;
+        app.dashboard.focused_panel = PanelId::Notes;
 
         press(&mut app, KeyCode::Char('/'));
 
@@ -657,11 +657,11 @@ mod tests {
     fn global_shortcuts_do_not_fire_mid_pending_split() {
         let mut app = test_app();
         app.begin_split_command();
-        assert!(app.pending_split);
+        assert!(app.dashboard.pending_split);
 
         press(&mut app, KeyCode::Char(','));
 
         assert_eq!(app.page, Page::Dashboard);
-        assert!(!app.pending_split);
+        assert!(!app.dashboard.pending_split);
     }
 }

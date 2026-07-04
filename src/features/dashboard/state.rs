@@ -1,10 +1,34 @@
 use crate::app::*;
 use crate::i18n::Key;
 
+/// Layout + panel state owned by the dashboard.
+#[derive(Debug)]
+pub struct DashboardFeature {
+    pub layout: DashboardLayout,
+    pub focused_panel: PanelId,
+    pub closed_panels: Vec<PanelId>,
+    pub panel_contents: PanelContents,
+    pub window_picker_index: usize,
+    pub pending_split: bool,
+}
+
+impl Default for DashboardFeature {
+    fn default() -> Self {
+        Self {
+            layout: DashboardLayout::default(),
+            focused_panel: PanelId::News,
+            closed_panels: Vec::new(),
+            panel_contents: PanelContents::default(),
+            window_picker_index: 0,
+            pending_split: false,
+        }
+    }
+}
+
 impl App {
     pub fn focus_panel(&mut self, panel_id: PanelId) {
         if self.is_panel_open(panel_id) {
-            self.focused_panel = panel_id;
+            self.dashboard.focused_panel = panel_id;
         }
     }
     pub fn focus_next_panel(&mut self) {
@@ -14,7 +38,7 @@ impl App {
         self.focus_by_offset(PanelId::ALL.len() - 1);
     }
     pub fn focus_panel_in_direction(&mut self, direction: MoveDirection) {
-        let next = match (self.focused_panel, direction) {
+        let next = match (self.dashboard.focused_panel, direction) {
             (PanelId::News, MoveDirection::Right) => PanelId::Watchlist,
             (PanelId::News, MoveDirection::Down) => PanelId::Calendar,
             (PanelId::Watchlist, MoveDirection::Left) => PanelId::News,
@@ -23,70 +47,70 @@ impl App {
             (PanelId::Calendar, MoveDirection::Right) => PanelId::Notes,
             (PanelId::Notes, MoveDirection::Up) => PanelId::Watchlist,
             (PanelId::Notes, MoveDirection::Left) => PanelId::Calendar,
-            _ => self.focused_panel,
+            _ => self.dashboard.focused_panel,
         };
 
         self.focus_panel(next);
     }
     pub fn close_focused_panel(&mut self) {
-        if self.open_panel_count() <= 1 || !self.is_panel_open(self.focused_panel) {
+        if self.open_panel_count() <= 1 || !self.is_panel_open(self.dashboard.focused_panel) {
             return;
         }
 
-        self.closed_panels.push(self.focused_panel);
-        self.pending_split = false;
+        self.dashboard.closed_panels.push(self.dashboard.focused_panel);
+        self.dashboard.pending_split = false;
         self.focus_next_panel();
     }
     pub fn reset_dashboard(&mut self) {
-        self.dashboard_layout = DashboardLayout::default();
-        self.closed_panels.clear();
-        self.focused_panel = PanelId::News;
+        self.dashboard.layout = DashboardLayout::default();
+        self.dashboard.closed_panels.clear();
+        self.dashboard.focused_panel = PanelId::News;
         self.show_help = false;
-        self.pending_split = false;
-        self.panel_contents = PanelContents::default();
-        self.window_picker_index = 0;
+        self.dashboard.pending_split = false;
+        self.dashboard.panel_contents = PanelContents::default();
+        self.dashboard.window_picker_index = 0;
     }
     pub fn is_panel_open(&self, panel_id: PanelId) -> bool {
-        !self.closed_panels.contains(&panel_id)
+        !self.dashboard.closed_panels.contains(&panel_id)
     }
     pub fn is_panel_focused(&self, panel_id: PanelId) -> bool {
-        self.focused_panel == panel_id && self.is_panel_open(panel_id)
+        self.dashboard.focused_panel == panel_id && self.is_panel_open(panel_id)
     }
     pub fn resize_dashboard(&mut self, direction: MoveDirection) {
         if self.page != Page::Dashboard {
             return;
         }
 
-        match (self.focused_panel, direction) {
+        match (self.dashboard.focused_panel, direction) {
             (PanelId::News | PanelId::Watchlist, MoveDirection::Left) => {
-                self.dashboard_layout.resize_top_left_width(-5)
+                self.dashboard.layout.resize_top_left_width(-5)
             }
             (PanelId::News | PanelId::Watchlist, MoveDirection::Right) => {
-                self.dashboard_layout.resize_top_left_width(5)
+                self.dashboard.layout.resize_top_left_width(5)
             }
             (PanelId::Calendar | PanelId::Notes, MoveDirection::Left) => {
-                self.dashboard_layout.resize_bottom_left_width(-5)
+                self.dashboard.layout.resize_bottom_left_width(-5)
             }
             (PanelId::Calendar | PanelId::Notes, MoveDirection::Right) => {
-                self.dashboard_layout.resize_bottom_left_width(5)
+                self.dashboard.layout.resize_bottom_left_width(5)
             }
             (PanelId::News | PanelId::Calendar, MoveDirection::Up) => {
-                self.dashboard_layout.resize_top_height(-5)
+                self.dashboard.layout.resize_top_height(-5)
             }
             (PanelId::News | PanelId::Calendar, MoveDirection::Down) => {
-                self.dashboard_layout.resize_top_height(5)
+                self.dashboard.layout.resize_top_height(5)
             }
             (PanelId::Watchlist | PanelId::Notes, MoveDirection::Up) => {
-                self.dashboard_layout.resize_top_height(-5)
+                self.dashboard.layout.resize_top_height(-5)
             }
             (PanelId::Watchlist | PanelId::Notes, MoveDirection::Down) => {
-                self.dashboard_layout.resize_top_height(5)
+                self.dashboard.layout.resize_top_height(5)
             }
         }
     }
     pub fn begin_split_command(&mut self) {
         if self.page == Page::Dashboard {
-            self.pending_split = true;
+            self.dashboard.pending_split = true;
         }
     }
     pub fn split_focused_panel(&mut self, direction: SplitDirection) {
@@ -94,9 +118,9 @@ impl App {
             return;
         }
 
-        self.pending_split = false;
+        self.dashboard.pending_split = false;
 
-        let panel_id = match (self.focused_panel, direction) {
+        let panel_id = match (self.dashboard.focused_panel, direction) {
             (PanelId::News, SplitDirection::Horizontal) => PanelId::Watchlist,
             (PanelId::Watchlist, SplitDirection::Horizontal) => PanelId::News,
             (PanelId::Calendar, SplitDirection::Horizontal) => PanelId::Notes,
@@ -109,51 +133,51 @@ impl App {
 
         self.open_panel(panel_id);
         self.set_panel_content(panel_id, WindowKind::Picker);
-        self.window_picker_index = 0;
+        self.dashboard.window_picker_index = 0;
     }
     pub fn add_panel(&mut self) {
-        self.pending_split = false;
+        self.dashboard.pending_split = false;
 
-        let Some(panel_id) = self.closed_panels.pop() else {
+        let Some(panel_id) = self.dashboard.closed_panels.pop() else {
             return;
         };
 
-        self.focused_panel = panel_id;
+        self.dashboard.focused_panel = panel_id;
         self.set_panel_content(panel_id, WindowKind::Picker);
-        self.window_picker_index = 0;
+        self.dashboard.window_picker_index = 0;
     }
     pub fn change_focused_panel_content(&mut self) {
-        if self.page != Page::Dashboard || !self.is_panel_open(self.focused_panel) {
+        if self.page != Page::Dashboard || !self.is_panel_open(self.dashboard.focused_panel) {
             return;
         }
 
-        let current = self.panel_content(self.focused_panel);
-        self.window_picker_index = WindowKind::CHOICES
+        let current = self.panel_content(self.dashboard.focused_panel);
+        self.dashboard.window_picker_index = WindowKind::CHOICES
             .iter()
             .position(|window_kind| *window_kind == current)
             .unwrap_or(0);
-        self.set_panel_content(self.focused_panel, WindowKind::Picker);
+        self.set_panel_content(self.dashboard.focused_panel, WindowKind::Picker);
     }
     pub fn cancel_pending_command(&mut self) {
-        self.pending_split = false;
+        self.dashboard.pending_split = false;
     }
     pub fn panel_content(&self, panel_id: PanelId) -> WindowKind {
-        self.panel_contents.get(panel_id)
+        self.dashboard.panel_contents.get(panel_id)
     }
     pub fn is_choosing_window(&self) -> bool {
-        self.panel_content(self.focused_panel) == WindowKind::Picker
+        self.panel_content(self.dashboard.focused_panel) == WindowKind::Picker
     }
     pub fn move_window_picker(&mut self, direction: SelectionDirection) {
         let choices = WindowKind::CHOICES.len();
-        self.window_picker_index = match direction {
+        self.dashboard.window_picker_index = match direction {
             SelectionDirection::Previous => {
-                if self.window_picker_index == 0 {
+                if self.dashboard.window_picker_index == 0 {
                     choices - 1
                 } else {
-                    self.window_picker_index - 1
+                    self.dashboard.window_picker_index - 1
                 }
             }
-            SelectionDirection::Next => (self.window_picker_index + 1) % choices,
+            SelectionDirection::Next => (self.dashboard.window_picker_index + 1) % choices,
         };
     }
     pub fn confirm_window_picker(&mut self) {
@@ -161,20 +185,20 @@ impl App {
             return;
         }
 
-        let window_kind = WindowKind::CHOICES[self.window_picker_index];
-        self.set_panel_content(self.focused_panel, window_kind);
+        let window_kind = WindowKind::CHOICES[self.dashboard.window_picker_index];
+        self.set_panel_content(self.dashboard.focused_panel, window_kind);
     }
     pub(crate) fn focus_by_offset(&mut self, offset: usize) {
         let current_index = PanelId::ALL
             .iter()
-            .position(|panel_id| *panel_id == self.focused_panel)
+            .position(|panel_id| *panel_id == self.dashboard.focused_panel)
             .unwrap_or(0);
 
         for step in 1..=PanelId::ALL.len() {
             let index = (current_index + offset * step) % PanelId::ALL.len();
             let panel_id = PanelId::ALL[index];
             if self.is_panel_open(panel_id) {
-                self.focused_panel = panel_id;
+                self.dashboard.focused_panel = panel_id;
                 break;
             }
         }
@@ -186,12 +210,12 @@ impl App {
             .count()
     }
     pub(crate) fn open_panel(&mut self, panel_id: PanelId) {
-        self.closed_panels
+        self.dashboard.closed_panels
             .retain(|closed_panel_id| *closed_panel_id != panel_id);
-        self.focused_panel = panel_id;
+        self.dashboard.focused_panel = panel_id;
     }
     pub(crate) fn set_panel_content(&mut self, panel_id: PanelId, window_kind: WindowKind) {
-        self.panel_contents.set(panel_id, window_kind);
+        self.dashboard.panel_contents.set(panel_id, window_kind);
     }
 }
 

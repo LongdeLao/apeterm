@@ -302,17 +302,12 @@ pub struct App {
     pub preferences: UserPreferences,
     pub i18n: I18n,
     pub theme_name: ThemeName,
-    pub dashboard_layout: DashboardLayout,
-    pub focused_panel: PanelId,
-    pub closed_panels: Vec<PanelId>,
+    pub dashboard: crate::features::dashboard::state::DashboardFeature,
     /// Page to return to when backing out of Search or Settings, so opening
     /// either one from Details/Search/Settings doesn't strand the user on
     /// Dashboard when they press Esc.
     pub return_page: Option<Page>,
     pub show_help: bool,
-    pub pending_split: bool,
-    pub panel_contents: PanelContents,
-    pub window_picker_index: usize,
     pub watchlist: crate::features::watchlist::state::WatchlistFeature,
     pub ticker_db_path: PathBuf,
     pub search_query: String,
@@ -370,14 +365,9 @@ impl App {
             preferences,
             i18n: I18n::new(locale),
             theme_name: config.theme,
-            dashboard_layout: DashboardLayout::default(),
-            focused_panel: PanelId::News,
-            closed_panels: Vec::new(),
+            dashboard: Default::default(),
             return_page: None,
             show_help: false,
-            pending_split: false,
-            panel_contents: PanelContents::default(),
-            window_picker_index: 0,
             watchlist: Default::default(),
             ticker_db_path: config.ticker_db_path.clone(),
             search_query: String::new(),
@@ -467,7 +457,7 @@ impl App {
     }
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
-        self.pending_split = false;
+        self.dashboard.pending_split = false;
     }
     pub fn toggle_locale(&mut self) {
         self.set_language(self.preferences.language.next());
@@ -482,7 +472,7 @@ impl App {
         }
 
         self.show_help = false;
-        self.pending_split = false;
+        self.dashboard.pending_split = false;
         if self.page == Page::Details {
             self.mode = AppMode::Normal;
             self.page = Page::Search;

@@ -56,13 +56,13 @@ fn render_picker(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     let mut lines = Vec::new();
 
     for (index, window_kind) in WindowKind::CHOICES.iter().enumerate() {
-        let marker = if index == app.window_picker_index {
+        let marker = if index == app.dashboard.window_picker_index {
             ">"
         } else {
             " "
         };
 
-        let style = if index == app.window_picker_index {
+        let style = if index == app.dashboard.window_picker_index {
             Style::default()
                 .fg(theme.foreground)
                 .add_modifier(Modifier::BOLD)
@@ -107,9 +107,9 @@ fn dashboard_geometry(area: Rect, app: &App) -> DashboardGeometry {
     let calendar_open = app.is_panel_open(PanelId::Calendar);
     let notes_open = app.is_panel_open(PanelId::Notes);
 
-    let top_split = app.dashboard_layout.top_divider_column(area.width);
-    let bottom_split = app.dashboard_layout.bottom_divider_column(area.width);
-    let row_split = app.dashboard_layout.divider_row(area.height);
+    let top_split = app.dashboard.layout.top_divider_column(area.width);
+    let bottom_split = app.dashboard.layout.bottom_divider_column(area.width);
+    let row_split = app.dashboard.layout.divider_row(area.height);
 
     let top_height = match (news_open || watchlist_open, calendar_open || notes_open) {
         (true, true) => row_split,
@@ -265,7 +265,7 @@ pub(crate) fn render_help(frame: &mut Frame, app: &App) {
     .join("\n");
 
     let modal_background = theme.background.unwrap_or(Color::Rgb(0, 0, 0));
-    let title = if app.pending_split {
+    let title = if app.dashboard.pending_split {
         app.t(Key::DashboardHelpTitleSplit)
     } else {
         app.t(Key::DashboardHelpTitle)
