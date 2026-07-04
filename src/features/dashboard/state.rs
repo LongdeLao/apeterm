@@ -57,7 +57,9 @@ impl App {
             return;
         }
 
-        self.dashboard.closed_panels.push(self.dashboard.focused_panel);
+        self.dashboard
+            .closed_panels
+            .push(self.dashboard.focused_panel);
         self.dashboard.pending_split = false;
         self.focus_next_panel();
     }
@@ -210,7 +212,8 @@ impl App {
             .count()
     }
     pub(crate) fn open_panel(&mut self, panel_id: PanelId) {
-        self.dashboard.closed_panels
+        self.dashboard
+            .closed_panels
             .retain(|closed_panel_id| *closed_panel_id != panel_id);
         self.dashboard.focused_panel = panel_id;
     }

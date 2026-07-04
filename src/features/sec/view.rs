@@ -89,7 +89,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     }
 
     let footer = app
-        .sec.status
+        .sec
+        .status
         .as_deref()
         .unwrap_or("[tab] panels  [←/→] tabs  [↑↓] navigate  [r] refresh");
     frame.render_widget(

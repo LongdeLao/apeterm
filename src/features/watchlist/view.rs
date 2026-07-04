@@ -141,7 +141,8 @@ fn push_watchlist_rows<'a>(
 
     for (index, symbol) in app.stock_watchlist().iter().enumerate() {
         let quote = app
-            .watchlist.stock_quotes
+            .watchlist
+            .stock_quotes
             .iter()
             .find(|quote| quote.symbol == *symbol);
         lines.push(symbol_line(
@@ -159,7 +160,8 @@ fn push_watchlist_rows<'a>(
 
     for (index, symbol) in app.crypto_watchlist().iter().enumerate() {
         let quote = app
-            .watchlist.crypto_quotes
+            .watchlist
+            .crypto_quotes
             .iter()
             .find(|quote| quote.symbol == *symbol);
         lines.push(symbol_line(
@@ -405,7 +407,8 @@ fn format_symbol_label(
 }
 
 fn watchlist_input_active(app: &App) -> bool {
-    app.watchlist.editor
+    app.watchlist
+        .editor
         .as_ref()
         .and_then(|editor| editor.mode.as_ref())
         .is_some()
@@ -415,7 +418,8 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
     let background = theme.background.unwrap_or(Color::Black);
     let Some(mode) = app
-        .watchlist.editor
+        .watchlist
+        .editor
         .as_ref()
         .and_then(|editor| editor.mode.as_ref())
     else {

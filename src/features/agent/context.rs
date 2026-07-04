@@ -28,7 +28,7 @@ pub fn build_context(app: &App) -> String {
         let _ = writeln!(context, "focused panel: {focused}");
     }
 
-    if let Some(details) = &app.selected_details {
+    if let Some(details) = &app.search.selected_details {
         let _ = writeln!(context, "selected symbol: {}", details.symbol);
     }
 

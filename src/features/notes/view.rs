@@ -224,7 +224,8 @@ fn render_document(frame: &mut Frame, app: &App, area: Rect, row: Option<&NoteRo
     };
 
     let is_draft = app
-        .notes.draft
+        .notes
+        .draft
         .as_ref()
         .is_some_and(|draft| row.is_some_and(|note| note.id == draft.note_id) || row.is_none());
 
@@ -340,7 +341,8 @@ fn render_suggestions(frame: &mut Frame, app: &App, inset: Rect, offset_row: u16
 
     let background = theme.background.unwrap_or(Color::Black);
     let lines: Vec<Line> = app
-        .notes.suggestions
+        .notes
+        .suggestions
         .iter()
         .take(6)
         .enumerate()

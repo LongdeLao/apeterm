@@ -106,7 +106,8 @@ impl App {
     }
     pub fn move_watchlist_selection(&mut self, direction: SelectionDirection) {
         if self
-            .watchlist.editor
+            .watchlist
+            .editor
             .as_ref()
             .is_some_and(|editor| editor.mode.is_some())
         {
@@ -131,7 +132,8 @@ impl App {
     }
     pub fn activate_watchlist_editor(&mut self) {
         if self
-            .watchlist.editor
+            .watchlist
+            .editor
             .as_ref()
             .is_some_and(|editor| editor.mode.is_some())
         {
@@ -249,14 +251,16 @@ impl App {
         };
     }
     pub(crate) fn selected_watchlist_input_symbol(&self, input: &str) -> Option<String> {
-        self.watchlist.suggestions
+        self.watchlist
+            .suggestions
             .get(self.watchlist.suggestion_selection)
             .map(|suggestion| suggestion.symbol.clone())
             .or_else(|| normalize_symbol(input))
     }
     pub(crate) fn save_watchlist_input(&mut self) {
         let Some(mode) = self
-            .watchlist.editor
+            .watchlist
+            .editor
             .as_mut()
             .and_then(|editor| editor.mode.take())
         else {
@@ -415,14 +419,17 @@ impl App {
     pub(crate) fn retain_configured_quotes(&mut self) {
         let stock_symbols = self.stock_watchlist().to_vec();
         let crypto_symbols = self.crypto_watchlist().to_vec();
-        self.watchlist.stock_quotes
+        self.watchlist
+            .stock_quotes
             .retain(|quote| stock_symbols.contains(&quote.symbol));
-        self.watchlist.crypto_quotes
+        self.watchlist
+            .crypto_quotes
             .retain(|quote| crypto_symbols.contains(&quote.symbol));
     }
     pub(crate) fn refresh_watchlist_suggestions(&mut self) {
         let Some(mode) = self
-            .watchlist.editor
+            .watchlist
+            .editor
             .as_ref()
             .and_then(|editor| editor.mode.as_ref())
         else {
@@ -453,7 +460,8 @@ impl App {
             Ok(results) => {
                 self.watchlist.suggestions = results;
                 self.watchlist.suggestion_selection = self
-                    .watchlist.suggestion_selection
+                    .watchlist
+                    .suggestion_selection
                     .min(self.watchlist.suggestions.len().saturating_sub(1));
             }
             Err(_) => {

@@ -235,7 +235,8 @@ impl App {
             Ok(results) => {
                 self.notes.suggestions = results;
                 self.notes.suggestion_selection = self
-                    .notes.suggestion_selection
+                    .notes
+                    .suggestion_selection
                     .min(self.notes.suggestions.len().saturating_sub(1));
             }
             Err(_) => {
@@ -258,7 +259,8 @@ impl App {
     }
     pub fn accept_note_suggestion(&mut self) {
         let Some(suggestion) = self
-            .notes.suggestions
+            .notes
+            .suggestions
             .get(self.notes.suggestion_selection)
             .cloned()
         else {

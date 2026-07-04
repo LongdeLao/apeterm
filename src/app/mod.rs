@@ -5,7 +5,7 @@
 //! in `features/*/view.rs`, input routing in `event.rs`. `plugins::registry` maps each
 //! feature area to its modules.
 
-use std::{path::PathBuf, sync::mpsc::Receiver};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +14,6 @@ use crate::{
     backend::BackendInsight,
     config::AppConfig,
     features::news::feed::FetchResult,
-    features::search::engine::{InstrumentDetails, LiveInstrumentDetails, SearchResult},
     features::watchlist::market::MarketEvent,
     features::watchlist::quotes::update_market_quotes,
     i18n::{I18n, Key, Locale},
@@ -310,26 +309,7 @@ pub struct App {
     pub show_help: bool,
     pub watchlist: crate::features::watchlist::state::WatchlistFeature,
     pub ticker_db_path: PathBuf,
-    pub search_query: String,
-    pub search_results: Vec<SearchResult>,
-    pub search_selection: usize,
-    pub search_scroll: usize,
-    pub search_limit: usize,
-    pub search_asset_kind: SearchAssetKind,
-    pub selected_details: Option<InstrumentDetails>,
-    pub selected_live_details: Option<LiveInstrumentDetails>,
-    pub live_details_loading: bool,
-    pub(crate) live_details_receiver: Option<Receiver<Option<LiveInstrumentDetails>>>,
-    pub detail_timeframe: DetailTimeframe,
-    pub detail_sidebar_scroll: usize,
-    pub detail_metric_selection: usize,
-    pub detail_description_expanded: bool,
-    pub detail_context_expanded: bool,
-    pub backend_insight: Option<BackendInsight>,
-    pub backend_insight_loading: bool,
-    pub backend_insight_status: Option<String>,
-    pub(crate) backend_insight_receiver: Option<Receiver<BackendInsightEvent>>,
-    pub search_message: Option<String>,
+    pub search: crate::features::search::state::SearchFeature,
     pub settings: crate::features::settings::state::SettingsFeature,
     pub news: crate::features::news::state::NewsFeature,
     pub notes: crate::features::notes::state::NotesFeature,
@@ -370,26 +350,7 @@ impl App {
             show_help: false,
             watchlist: Default::default(),
             ticker_db_path: config.ticker_db_path.clone(),
-            search_query: String::new(),
-            search_results: Vec::new(),
-            search_selection: 0,
-            search_scroll: 0,
-            search_limit: crate::features::search::state::SEARCH_PAGE_SIZE,
-            search_asset_kind: SearchAssetKind::Stocks,
-            selected_details: None,
-            selected_live_details: None,
-            live_details_loading: false,
-            live_details_receiver: None,
-            detail_timeframe: DetailTimeframe::ThreeMonths,
-            detail_sidebar_scroll: 0,
-            detail_metric_selection: 0,
-            detail_description_expanded: false,
-            detail_context_expanded: false,
-            backend_insight: None,
-            backend_insight_loading: false,
-            backend_insight_status: None,
-            backend_insight_receiver: None,
-            search_message: None,
+            search: Default::default(),
             settings: Default::default(),
             news: Default::default(),
             notes: Default::default(),
@@ -476,17 +437,17 @@ impl App {
         if self.page == Page::Details {
             self.mode = AppMode::Normal;
             self.page = Page::Search;
-            self.selected_details = None;
-            self.selected_live_details = None;
-            self.live_details_loading = false;
-            self.live_details_receiver = None;
-            self.detail_sidebar_scroll = 0;
-            self.detail_description_expanded = false;
-            self.detail_context_expanded = false;
-            self.backend_insight = None;
-            self.backend_insight_loading = false;
-            self.backend_insight_status = None;
-            self.backend_insight_receiver = None;
+            self.search.selected_details = None;
+            self.search.selected_live_details = None;
+            self.search.live_details_loading = false;
+            self.search.live_details_receiver = None;
+            self.search.detail_sidebar_scroll = 0;
+            self.search.detail_description_expanded = false;
+            self.search.detail_context_expanded = false;
+            self.search.backend_insight = None;
+            self.search.backend_insight_loading = false;
+            self.search.backend_insight_status = None;
+            self.search.backend_insight_receiver = None;
         } else if self.page == Page::Search {
             self.mode = AppMode::Normal;
             self.page = self.return_page.take().unwrap_or(Page::Dashboard);
@@ -557,7 +518,8 @@ impl App {
             }
             AppMode::TextInput(InputTarget::ResetConfirmation) => {
                 if self
-                    .settings.reset_confirmation
+                    .settings
+                    .reset_confirmation
                     .as_ref()
                     .is_some_and(|input| input.input == "reset")
                 {
@@ -581,7 +543,7 @@ impl App {
         match self.mode {
             AppMode::TextInput(InputTarget::Agent) => self.agent.input.push(character),
             AppMode::TextInput(InputTarget::Search) => {
-                self.search_query.push(character);
+                self.search.query.push(character);
                 self.reset_search_window();
                 self.refresh_search();
             }
@@ -592,7 +554,8 @@ impl App {
             }
             AppMode::TextInput(InputTarget::Watchlist) => {
                 match self
-                    .watchlist.editor
+                    .watchlist
+                    .editor
                     .as_mut()
                     .and_then(|editor| editor.mode.as_mut())
                 {
@@ -620,7 +583,7 @@ impl App {
                 self.agent.input.pop();
             }
             AppMode::TextInput(InputTarget::Search) => {
-                self.search_query.pop();
+                self.search.query.pop();
                 self.reset_search_window();
                 self.refresh_search();
             }
@@ -631,7 +594,8 @@ impl App {
             }
             AppMode::TextInput(InputTarget::Watchlist) => {
                 match self
-                    .watchlist.editor
+                    .watchlist
+                    .editor
                     .as_mut()
                     .and_then(|editor| editor.mode.as_mut())
                 {
@@ -664,7 +628,7 @@ impl App {
     }
     pub(crate) fn set_experience(&mut self, experience: Experience) {
         self.preferences.experience = experience;
-        self.detail_metric_selection = 0;
+        self.search.detail_metric_selection = 0;
         self.apply_preferences();
     }
     pub(crate) fn set_tone(&mut self, tone: Tone) {
@@ -681,7 +645,7 @@ impl App {
     }
     pub(crate) fn set_preferences(&mut self, preferences: UserPreferences) {
         self.preferences = preferences;
-        self.detail_metric_selection = 0;
+        self.search.detail_metric_selection = 0;
         self.apply_preferences();
     }
     pub(crate) fn apply_preferences(&mut self) {

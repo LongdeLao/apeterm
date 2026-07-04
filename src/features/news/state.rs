@@ -107,7 +107,8 @@ impl App {
                     self.news.source_counts = result.source_counts;
                     self.sync_collapsed_watchlist_news();
                     self.news.selection = self
-                        .news.selection
+                        .news
+                        .selection
                         .min(self.news_visible_rows().len().saturating_sub(1));
                     self.sync_news_scroll(6);
                     self.news.loading = !done;
@@ -299,7 +300,8 @@ impl App {
             .unwrap_or_else(|| self.t(Key::NewsStatusUndated).to_string())
     }
     pub fn news_filtered_indices(&self) -> Vec<usize> {
-        self.news.items
+        self.news
+            .items
             .iter()
             .enumerate()
             .filter_map(|(index, item)| self.news_matches_filter(item).then_some(index))
@@ -324,7 +326,8 @@ impl App {
 
             if seen.insert(symbol.clone()) {
                 let count = self
-                    .news.items
+                    .news
+                    .items
                     .iter()
                     .filter(|candidate| self.news_matches_filter(candidate))
                     .filter(|candidate| candidate.symbols.first() == Some(symbol))
@@ -383,14 +386,17 @@ impl App {
     }
     pub(crate) fn sync_collapsed_watchlist_news(&mut self) {
         let symbols = self
-            .news.items
+            .news
+            .items
             .iter()
             .filter(|item| item.relevant)
             .filter_map(|item| item.symbols.first().cloned())
             .collect::<HashSet<_>>();
-        self.news.collapsed_watchlist
+        self.news
+            .collapsed_watchlist
             .retain(|symbol| symbols.contains(symbol));
-        self.news.known_watchlist_symbols
+        self.news
+            .known_watchlist_symbols
             .retain(|symbol| symbols.contains(symbol));
         for symbol in symbols {
             if !self.news.known_watchlist_symbols.contains(&symbol) {
@@ -402,7 +408,8 @@ impl App {
     pub fn news_empty_message(&self) -> &str {
         if self.news.items.is_empty() {
             return self
-                .news.status
+                .news
+                .status
                 .as_deref()
                 .unwrap_or(self.t(Key::NewsEmpty));
         }
@@ -412,7 +419,8 @@ impl App {
             }
             return self.t(Key::NewsEmptyWatchlistMatches);
         }
-        self.news.status
+        self.news
+            .status
             .as_deref()
             .unwrap_or(self.t(Key::NewsEmpty))
     }
@@ -458,12 +466,14 @@ impl App {
             .collect()
     }
     pub(crate) fn financial_juice_in_cooldown(&self) -> bool {
-        self.news.financial_juice_cooldown_until
+        self.news
+            .financial_juice_cooldown_until
             .is_some_and(|until| Instant::now() < until)
     }
     pub(crate) fn update_financial_juice_backoff(&mut self) {
         let hit_rate_limit = self
-            .news.status
+            .news
+            .status
             .as_deref()
             .is_some_and(|status| status.contains("FinancialJuice") && status.contains("429"));
 
@@ -475,7 +485,8 @@ impl App {
                     Some("FinancialJuice paused for 30m after 429; using other feeds.".to_string());
             }
         } else if self
-            .news.financial_juice_cooldown_until
+            .news
+            .financial_juice_cooldown_until
             .is_some_and(|until| Instant::now() >= until)
         {
             self.news.financial_juice_cooldown_until = None;

@@ -260,7 +260,8 @@ fn render_reset_confirmation(frame: &mut Frame, app: &App) {
     let background = theme.background.unwrap_or(Color::Black);
     let area = centered_rect(ui::content_area(frame.area(), app), 64, 9);
     let input = app
-        .settings.reset_confirmation
+        .settings
+        .reset_confirmation
         .as_ref()
         .map(|input| input.input.as_str())
         .unwrap_or_default();

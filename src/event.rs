@@ -214,7 +214,9 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         return;
     }
 
-    if app.dashboard.focused_panel == PanelId::Watchlist && handle_watchlist_panel_key(app, key_code) {
+    if app.dashboard.focused_panel == PanelId::Watchlist
+        && handle_watchlist_panel_key(app, key_code)
+    {
         return;
     }
 
@@ -358,7 +360,9 @@ fn handle_notes_key(app: &mut App, key_code: KeyCode) -> bool {
 }
 
 fn handle_sec_key(app: &mut App, key_code: KeyCode) -> bool {
-    if app.dashboard.focused_panel != PanelId::Notes && app.dashboard.focused_panel != PanelId::Calendar {
+    if app.dashboard.focused_panel != PanelId::Notes
+        && app.dashboard.focused_panel != PanelId::Calendar
+    {
         return false;
     }
     if app.panel_content(app.dashboard.focused_panel) != crate::app::WindowKind::Sec {

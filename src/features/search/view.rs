@@ -53,7 +53,7 @@ pub fn render(frame: &mut Frame, app: &App) {
             ),
             Span::raw(" "),
             Span::styled(
-                app.search_query.as_str(),
+                app.search.query.as_str(),
                 Style::default()
                     .fg(theme.foreground)
                     .add_modifier(Modifier::BOLD),
@@ -63,13 +63,13 @@ pub fn render(frame: &mut Frame, app: &App) {
         Line::from(vec![
             filter_span(
                 app.t(Key::SearchFilterStocks),
-                app.search_asset_kind == SearchAssetKind::Stocks,
+                app.search.asset_kind == SearchAssetKind::Stocks,
                 theme,
             ),
             Span::raw("  "),
             filter_span(
                 app.t(Key::SearchFilterEtfs),
-                app.search_asset_kind == SearchAssetKind::Etfs,
+                app.search.asset_kind == SearchAssetKind::Etfs,
                 theme,
             ),
         ]),
@@ -81,13 +81,13 @@ pub fn render(frame: &mut Frame, app: &App) {
             UnicodeWidthStr::width(format!(" {}  ", app.t(Key::CopySearchPlaceholder)).as_str());
         frame.set_cursor_position(Position::new(
             chunks[0].x.saturating_add(
-                prompt_width as u16 + UnicodeWidthStr::width(app.search_query.as_str()) as u16,
+                prompt_width as u16 + UnicodeWidthStr::width(app.search.query.as_str()) as u16,
             ),
             chunks[0].y,
         ));
     }
 
-    if let Some(message) = &app.search_message {
+    if let Some(message) = &app.search.message {
         frame.render_widget(
             Paragraph::new(message.as_str()).style(background_style(theme).fg(theme.muted)),
             chunks[1],
@@ -100,7 +100,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 pub fn render_details(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
     let area = ui::content_area(frame.area(), app);
-    let Some(details) = &app.selected_details else {
+    let Some(details) = &app.search.selected_details else {
         return;
     };
 
@@ -181,7 +181,7 @@ fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, 
     let history = visible_history(app);
 
     if history.len() < 2 {
-        let message = if app.live_details_loading {
+        let message = if app.search.live_details_loading {
             app.t(Key::DetailsStatusLoading)
         } else {
             app.t(Key::DetailsChartNoData)
@@ -206,11 +206,13 @@ fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, 
         .map(|point| point.close)
         .fold(f64::NEG_INFINITY, f64::max);
     let current_price = app
+        .search
         .selected_live_details
         .as_ref()
         .and_then(|live| live.price)
         .unwrap_or(last.close);
     let reference = app
+        .search
         .selected_live_details
         .as_ref()
         .and_then(|live| live.previous_close);
@@ -331,7 +333,7 @@ fn chart_header_line(
             push_span_with_width(&mut spans, &mut used, "  ", Style::default());
         }
         let label = app.t(timeframe.label_key());
-        if *timeframe == app.detail_timeframe {
+        if *timeframe == app.search.detail_timeframe {
             push_span_with_width(
                 &mut spans,
                 &mut used,
@@ -395,7 +397,7 @@ fn chart_summary_spans(
     };
     vec![
         (
-            format!("{}: ", app.t(app.detail_timeframe.label_key())),
+            format!("{}: ", app.t(app.search.detail_timeframe.label_key())),
             Style::default().fg(theme.muted),
         ),
         (
@@ -428,11 +430,12 @@ fn push_span_with_width(
 
 fn visible_history(app: &App) -> Vec<HistoryPoint> {
     let all = app
+        .search
         .selected_live_details
         .as_ref()
         .map(|live| normalize_history(&live.history))
         .unwrap_or_default();
-    let Some(days) = app.detail_timeframe.day_window() else {
+    let Some(days) = app.search.detail_timeframe.day_window() else {
         return all;
     };
     let Some(last) = all.last() else {
@@ -447,7 +450,7 @@ fn visible_history(app: &App) -> Vec<HistoryPoint> {
     if filtered.len() >= 2 {
         return filtered;
     }
-    let fallback = match app.detail_timeframe {
+    let fallback = match app.search.detail_timeframe {
         DetailTimeframe::OneDay => 2,
         DetailTimeframe::OneWeek => 5,
         DetailTimeframe::OneMonth => 22,
@@ -578,7 +581,7 @@ fn draw_x_axis(
     if history.is_empty() || area.width == 0 {
         return;
     }
-    for (ts, label) in x_axis_labels(app.detail_timeframe, history, area.width) {
+    for (ts, label) in x_axis_labels(app.search.detail_timeframe, history, area.width) {
         let x = time_to_x(area, ts, history);
         let width = text_width(&label) as u16;
         let start = x.saturating_sub(width / 2).max(area.x);
@@ -615,7 +618,7 @@ fn render_detail_sidebar(
     };
     let lines = detail_sidebar_lines(app, details, theme, inner.width as usize);
     let max_scroll = lines.len().saturating_sub(inner.height as usize);
-    let scroll = app.detail_sidebar_scroll.min(max_scroll);
+    let scroll = app.search.detail_sidebar_scroll.min(max_scroll);
     let end = scroll
         .saturating_add(inner.height as usize)
         .min(lines.len());
@@ -691,7 +694,7 @@ fn push_quote_section(
         ),
         Style::default().fg(theme.muted),
     )));
-    if let Some(live) = &app.selected_live_details {
+    if let Some(live) = &app.search.selected_live_details {
         lines.push(Line::from(Span::styled(
             live.price
                 .map(format_price)
@@ -720,7 +723,7 @@ fn push_quote_section(
             )));
         }
     } else {
-        let status = if app.live_details_loading {
+        let status = if app.search.live_details_loading {
             app.t(Key::DetailsStatusLoading)
         } else {
             app.t(Key::DetailsChartNoData)
@@ -767,8 +770,8 @@ fn push_key_stats(
     theme: crate::theme::Theme,
     width: usize,
 ) {
-    let Some(live) = &app.selected_live_details else {
-        let loading = if app.live_details_loading {
+    let Some(live) = &app.search.selected_live_details else {
+        let loading = if app.search.live_details_loading {
             app.t(Key::DetailsStatusLoading)
         } else {
             app.t(Key::DetailsChartNoData)
@@ -959,7 +962,7 @@ fn push_profile(
     theme: crate::theme::Theme,
     width: usize,
 ) {
-    let live = app.selected_live_details.as_ref();
+    let live = app.search.selected_live_details.as_ref();
     let headquarters = live.and_then(format_headquarters);
     let employees = live
         .and_then(|live| live.full_time_employees)
@@ -1000,7 +1003,7 @@ fn push_company_description(
     theme: crate::theme::Theme,
     width: usize,
 ) {
-    let Some(live) = &app.selected_live_details else {
+    let Some(live) = &app.search.selected_live_details else {
         lines.push(Line::from(Span::styled(
             app.t(Key::DetailsStatusLoading).to_string(),
             Style::default().fg(theme.muted),
@@ -1015,7 +1018,7 @@ fn push_company_description(
         return;
     };
     let mut wrapped = wrap_words(&summary, width);
-    if !app.detail_description_expanded && wrapped.len() > 3 {
+    if !app.search.detail_description_expanded && wrapped.len() > 3 {
         wrapped.truncate(3);
         append_suffix_to_last_line(&mut wrapped, "...", width);
     }
@@ -1034,14 +1037,14 @@ fn push_market_context(
     theme: crate::theme::Theme,
     width: usize,
 ) {
-    if app.backend_insight_loading {
+    if app.search.backend_insight_loading {
         lines.push(Line::from(Span::styled(
             app.t(Key::DetailsContextLoading).to_string(),
             Style::default().fg(theme.muted),
         )));
         return;
     }
-    if let Some(status) = &app.backend_insight_status {
+    if let Some(status) = &app.search.backend_insight_status {
         lines.push(Line::from(Span::styled(
             app.t(Key::DetailsContextBackendUnavailable)
                 .replace("{status}", status),
@@ -1049,7 +1052,7 @@ fn push_market_context(
         )));
         return;
     }
-    let Some(insight) = app.backend_insight.as_ref() else {
+    let Some(insight) = app.search.backend_insight.as_ref() else {
         lines.push(Line::from(Span::styled(
             app.t(Key::DetailsContextEmpty).to_string(),
             Style::default().fg(theme.muted),
@@ -1073,7 +1076,7 @@ fn push_market_context(
 
     if !explanation.summary.trim().is_empty() {
         let mut summary = wrap_words(&explanation.summary, width);
-        if !app.detail_context_expanded && summary.len() > 2 {
+        if !app.search.detail_context_expanded && summary.len() > 2 {
             summary.truncate(2);
             append_suffix_to_last_line(&mut summary, "...", width);
         }
@@ -1099,7 +1102,7 @@ fn push_market_context(
             Style::default().fg(theme.muted).add_modifier(Modifier::DIM),
         )));
     }
-    let driver_limit = if app.detail_context_expanded {
+    let driver_limit = if app.search.detail_context_expanded {
         usize::MAX
     } else {
         2
@@ -1176,7 +1179,7 @@ struct DetailHeadline {
 }
 
 fn detail_headlines(app: &App, symbol: &str) -> Vec<DetailHeadline> {
-    if let Some(insight) = app.backend_insight.as_ref()
+    if let Some(insight) = app.search.backend_insight.as_ref()
         && insight.ticker == symbol
         && let Some(context) = &insight.context
     {
@@ -1201,7 +1204,8 @@ fn dedupe_backend_headlines(app: &App, articles: &[InsightArticle]) -> Vec<Detai
 fn dedupe_local_headlines(app: &App, symbol: &str) -> Vec<DetailHeadline> {
     let mut rows = Vec::new();
     for item in app
-        .news.items
+        .news
+        .items
         .iter()
         .filter(|item| item.symbols.iter().any(|candidate| candidate == symbol))
     {
@@ -1247,7 +1251,7 @@ fn merge_headline(rows: &mut Vec<DetailHeadline>, title: String, source: String,
 }
 
 fn backend_headlines_empty_message(app: &App, symbol: &str) -> Option<String> {
-    let insight = app.backend_insight.as_ref()?;
+    let insight = app.search.backend_insight.as_ref()?;
     if insight.ticker != symbol {
         return None;
     }
@@ -1370,7 +1374,7 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
 
     let visible_rows = inner.height.saturating_sub(1).max(1) as usize;
 
-    if app.search_results.is_empty() {
+    if app.search.results.is_empty() {
         frame.render_widget(
             Paragraph::new(app.t(Key::SearchEmpty)).style(Style::default().fg(theme.muted)),
             inner,
@@ -1381,13 +1385,13 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
     let scroll = visible_scroll_start(app, visible_rows);
     let end = scroll
         .saturating_add(visible_rows)
-        .min(app.search_results.len());
-    let rows = app.search_results[scroll..end]
+        .min(app.search.results.len());
+    let rows = app.search.results[scroll..end]
         .iter()
         .enumerate()
         .map(|(offset, result)| {
             let index = scroll + offset;
-            let selected = index == app.search_selection;
+            let selected = index == app.search.selection;
             let style = if selected {
                 Style::default()
                     .fg(theme.foreground)
@@ -1455,7 +1459,7 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
             app.t(Key::SearchStatusLoaded)
                 .replace("{start}", &(scroll + 1).to_string())
                 .replace("{end}", &end.to_string())
-                .replace("{total}", &app.search_results.len().to_string()),
+                .replace("{total}", &app.search.results.len().to_string()),
         )
         .style(Style::default().fg(theme.muted)),
         chunks[1],
@@ -1871,14 +1875,14 @@ fn format_compact_number(value: f64) -> String {
 
 fn visible_scroll_start(app: &App, visible_rows: usize) -> usize {
     if visible_rows == 0 {
-        return app.search_selection.min(app.search_results.len());
+        return app.search.selection.min(app.search.results.len());
     }
 
-    let mut scroll = app.search_scroll.min(app.search_results.len());
-    if app.search_selection < scroll {
-        scroll = app.search_selection;
-    } else if app.search_selection >= scroll + visible_rows {
-        scroll = app.search_selection + 1 - visible_rows;
+    let mut scroll = app.search.scroll.min(app.search.results.len());
+    if app.search.selection < scroll {
+        scroll = app.search.selection;
+    } else if app.search.selection >= scroll + visible_rows {
+        scroll = app.search.selection + 1 - visible_rows;
     }
     scroll
 }
@@ -1928,7 +1932,7 @@ mod detail_render_tests {
     fn detail_app() -> App {
         let mut app = App::new(AppConfig::default().expect("default config"));
         app.page = Page::Details;
-        app.selected_details = Some(InstrumentDetails {
+        app.search.selected_details = Some(InstrumentDetails {
             symbol: "AAPL".to_string(),
             name: "Apple Inc.".to_string(),
             exchange: Some("NASDAQ".to_string()),
@@ -1939,7 +1943,7 @@ mod detail_render_tests {
             active: true,
             last_updated: Some("2026-07-03".to_string()),
         });
-        app.selected_live_details = Some(LiveInstrumentDetails {
+        app.search.selected_live_details = Some(LiveInstrumentDetails {
             price: Some(194.83),
             previous_close: Some(197.04),
             day_volume: Some(142_390_000.0),
@@ -1966,7 +1970,7 @@ mod detail_render_tests {
             full_time_employees: Some(164_000.0),
             history: sample_history(),
         });
-        app.backend_insight = Some(BackendInsight {
+        app.search.backend_insight = Some(BackendInsight {
             ticker: "AAPL".to_string(),
             context: Some(InsightContextResponse {
                 ticker: "AAPL".to_string(),
