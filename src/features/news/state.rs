@@ -15,6 +15,48 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// UI + runtime state owned by the news feature.
+#[derive(Debug)]
+pub struct NewsFeature {
+    pub items: Vec<NewsItem>,
+    pub selection: usize,
+    pub scroll: usize,
+    pub loading: bool,
+    pub status: Option<String>,
+    pub selected: Option<NewsItem>,
+    pub filter_tab: NewsFilterTab,
+    pub source_label: String,
+    pub connection_status: String,
+    pub source_counts: Vec<(String, usize)>,
+    pub collapsed_watchlist: HashSet<String>,
+    pub(crate) known_watchlist_symbols: HashSet<String>,
+    pub(crate) last_refresh: Option<Instant>,
+    pub(crate) receiver: Option<mpsc::Receiver<NewsEvent>>,
+    pub(crate) financial_juice_cooldown_until: Option<Instant>,
+}
+
+impl Default for NewsFeature {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            selection: 0,
+            scroll: 0,
+            loading: false,
+            status: None,
+            selected: None,
+            filter_tab: NewsFilterTab::All,
+            source_label: "news feed".to_string(),
+            connection_status: "connecting...".to_string(),
+            source_counts: Vec::new(),
+            collapsed_watchlist: HashSet::new(),
+            known_watchlist_symbols: HashSet::new(),
+            last_refresh: None,
+            receiver: None,
+            financial_juice_cooldown_until: None,
+        }
+    }
+}
+
 impl App {
     pub fn news_fetch_on_startup(&self) -> bool {
         self.config.news.fetch_on_startup
@@ -23,7 +65,7 @@ impl App {
         Duration::from_secs(self.config.news.refresh_interval_seconds.max(1))
     }
     pub fn refresh_news(&mut self) {
-        if self.news_loading {
+        if self.news.loading {
             return;
         }
 
@@ -38,13 +80,13 @@ impl App {
                 && !self.financial_juice_in_cooldown(),
             enable_nasdaq: self.config.news.enable_nasdaq,
         };
-        self.news_loading = true;
-        self.last_news_refresh = Some(Instant::now());
-        self.news_status = Some(self.t(Key::NewsStatusLoading).to_string());
-        self.news_connection_status = "reconnecting...".to_string();
+        self.news.loading = true;
+        self.news.last_refresh = Some(Instant::now());
+        self.news.status = Some(self.t(Key::NewsStatusLoading).to_string());
+        self.news.connection_status = "reconnecting...".to_string();
 
         let (sender, receiver) = mpsc::channel();
-        self.news_receiver = Some(receiver);
+        self.news.receiver = Some(receiver);
         thread::spawn(move || {
             let result = news::stream_all_news(&runtime_config, |result, done| {
                 let _ = sender.send(NewsEvent::Loaded { result, done });
@@ -55,27 +97,27 @@ impl App {
         });
     }
     pub fn poll_news(&mut self) {
-        if let Some(receiver) = &self.news_receiver {
+        if let Some(receiver) = &self.news.receiver {
             match receiver.try_recv() {
                 Ok(NewsEvent::Loaded { result, done }) => {
-                    let selected_id = self.selected_news.as_ref().map(|item| item.id.clone());
-                    self.news_items = result.items;
-                    self.news_source_label = result.source_label;
-                    self.news_connection_status = result.connection_status;
-                    self.news_source_counts = result.source_counts;
+                    let selected_id = self.news.selected.as_ref().map(|item| item.id.clone());
+                    self.news.items = result.items;
+                    self.news.source_label = result.source_label;
+                    self.news.connection_status = result.connection_status;
+                    self.news.source_counts = result.source_counts;
                     self.sync_collapsed_watchlist_news();
-                    self.news_selection = self
-                        .news_selection
+                    self.news.selection = self
+                        .news.selection
                         .min(self.news_visible_rows().len().saturating_sub(1));
                     self.sync_news_scroll(6);
-                    self.news_loading = !done;
+                    self.news.loading = !done;
                     if done {
-                        self.news_receiver = None;
+                        self.news.receiver = None;
                     }
-                    self.selected_news = selected_id
-                        .and_then(|id| self.news_items.iter().find(|item| item.id == id).cloned());
-                    self.news_status = result.status.or_else(|| {
-                        if self.news_items.is_empty() {
+                    self.news.selected = selected_id
+                        .and_then(|id| self.news.items.iter().find(|item| item.id == id).cloned());
+                    self.news.status = result.status.or_else(|| {
+                        if self.news.items.is_empty() {
                             Some(self.t(Key::NewsEmpty).to_string())
                         } else {
                             None
@@ -84,19 +126,19 @@ impl App {
                     self.update_financial_juice_backoff();
                 }
                 Ok(NewsEvent::Error(error)) => {
-                    self.news_loading = false;
-                    self.news_receiver = None;
-                    self.news_connection_status = "reconnecting...".to_string();
-                    self.news_status =
+                    self.news.loading = false;
+                    self.news.receiver = None;
+                    self.news.connection_status = "reconnecting...".to_string();
+                    self.news.status =
                         Some(self.t(Key::NewsStatusError).replace("{error}", &error));
                     self.update_financial_juice_backoff();
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    self.news_loading = false;
-                    self.news_receiver = None;
-                    self.news_connection_status = "reconnecting...".to_string();
-                    self.news_status = Some(self.t(Key::NewsStatusInterrupted).to_string());
+                    self.news.loading = false;
+                    self.news.receiver = None;
+                    self.news.connection_status = "reconnecting...".to_string();
+                    self.news.status = Some(self.t(Key::NewsStatusInterrupted).to_string());
                     self.update_financial_juice_backoff();
                 }
             }
@@ -105,11 +147,11 @@ impl App {
         self.maybe_auto_refresh_news();
     }
     pub(crate) fn maybe_auto_refresh_news(&mut self) {
-        if self.news_loading || !self.onboarding_complete {
+        if self.news.loading || !self.onboarding_complete {
             return;
         }
 
-        let Some(last_refresh) = self.last_news_refresh else {
+        let Some(last_refresh) = self.news.last_refresh else {
             self.refresh_news();
             return;
         };
@@ -135,18 +177,18 @@ impl App {
     }
     pub fn move_news_selection(&mut self, direction: SelectionDirection) {
         let visible = self.news_filtered_indices();
-        if self.news_filter_tab == NewsFilterTab::Watchlist {
+        if self.news.filter_tab == NewsFilterTab::Watchlist {
             let row_count = self.news_visible_rows().len();
             if row_count == 0 {
-                self.news_selection = 0;
-                self.news_scroll = 0;
+                self.news.selection = 0;
+                self.news.scroll = 0;
                 return;
             }
 
-            self.news_selection = match direction {
-                SelectionDirection::Previous => self.news_selection.saturating_sub(1),
+            self.news.selection = match direction {
+                SelectionDirection::Previous => self.news.selection.saturating_sub(1),
                 SelectionDirection::Next => {
-                    (self.news_selection + 1).min(row_count.saturating_sub(1))
+                    (self.news.selection + 1).min(row_count.saturating_sub(1))
                 }
             };
             self.sync_news_scroll(6);
@@ -154,57 +196,57 @@ impl App {
         }
 
         if visible.is_empty() {
-            self.news_selection = 0;
-            self.news_scroll = 0;
+            self.news.selection = 0;
+            self.news.scroll = 0;
             return;
         }
 
-        self.news_selection = match direction {
-            SelectionDirection::Previous => self.news_selection.saturating_sub(1),
+        self.news.selection = match direction {
+            SelectionDirection::Previous => self.news.selection.saturating_sub(1),
             SelectionDirection::Next => {
-                (self.news_selection + 1).min(visible.len().saturating_sub(1))
+                (self.news.selection + 1).min(visible.len().saturating_sub(1))
             }
         };
         self.sync_news_scroll(6);
     }
     pub fn open_selected_news(&mut self) {
-        if self.news_filter_tab == NewsFilterTab::Watchlist {
-            match self.news_visible_rows().get(self.news_selection) {
+        if self.news.filter_tab == NewsFilterTab::Watchlist {
+            match self.news_visible_rows().get(self.news.selection) {
                 Some(NewsListRow::Group { symbol, .. }) => {
-                    if !self.collapsed_watchlist_news.remove(symbol) {
-                        self.collapsed_watchlist_news.insert(symbol.clone());
+                    if !self.news.collapsed_watchlist.remove(symbol) {
+                        self.news.collapsed_watchlist.insert(symbol.clone());
                     }
-                    self.selected_news = None;
+                    self.news.selected = None;
                     self.sync_news_scroll(6);
                 }
                 Some(NewsListRow::Item(index)) => {
-                    self.selected_news = self.news_items.get(*index).cloned();
+                    self.news.selected = self.news.items.get(*index).cloned();
                 }
                 None => {
-                    self.selected_news = None;
+                    self.news.selected = None;
                 }
             }
             return;
         }
 
-        self.selected_news = self
+        self.news.selected = self
             .news_filtered_indices()
-            .get(self.news_selection)
-            .and_then(|index| self.news_items.get(*index))
+            .get(self.news.selection)
+            .and_then(|index| self.news.items.get(*index))
             .cloned();
     }
     pub fn open_selected_news_in_browser(&mut self) {
-        let item = if self.news_filter_tab == NewsFilterTab::Watchlist {
+        let item = if self.news.filter_tab == NewsFilterTab::Watchlist {
             self.news_visible_rows()
-                .get(self.news_selection)
+                .get(self.news.selection)
                 .and_then(|row| match row {
-                    NewsListRow::Item(index) => self.news_items.get(*index),
+                    NewsListRow::Item(index) => self.news.items.get(*index),
                     NewsListRow::Group { .. } => None,
                 })
         } else {
             self.news_filtered_indices()
-                .get(self.news_selection)
-                .and_then(|index| self.news_items.get(*index))
+                .get(self.news.selection)
+                .and_then(|index| self.news.items.get(*index))
         };
         let Some(item) = item else {
             return;
@@ -212,13 +254,13 @@ impl App {
 
         match open_url(&item.url) {
             Ok(()) => {
-                self.news_status = Some(
+                self.news.status = Some(
                     self.t(Key::NewsStatusOpened)
                         .replace("{source}", item.source.as_str()),
                 );
             }
             Err(error) => {
-                self.news_status =
+                self.news.status =
                     Some(self.t(Key::NewsStatusOpenError).replace("{error}", &error));
             }
         }
@@ -257,7 +299,7 @@ impl App {
             .unwrap_or_else(|| self.t(Key::NewsStatusUndated).to_string())
     }
     pub fn news_filtered_indices(&self) -> Vec<usize> {
-        self.news_items
+        self.news.items
             .iter()
             .enumerate()
             .filter_map(|(index, item)| self.news_matches_filter(item).then_some(index))
@@ -265,7 +307,7 @@ impl App {
     }
     pub fn news_visible_rows(&self) -> Vec<NewsListRow> {
         let filtered = self.news_filtered_indices();
-        if self.news_filter_tab != NewsFilterTab::Watchlist {
+        if self.news.filter_tab != NewsFilterTab::Watchlist {
             return filtered.into_iter().map(NewsListRow::Item).collect();
         }
 
@@ -273,7 +315,7 @@ impl App {
         let mut seen = HashSet::new();
 
         for index in filtered {
-            let Some(item) = self.news_items.get(index) else {
+            let Some(item) = self.news.items.get(index) else {
                 continue;
             };
             let Some(symbol) = item.symbols.first() else {
@@ -282,12 +324,12 @@ impl App {
 
             if seen.insert(symbol.clone()) {
                 let count = self
-                    .news_items
+                    .news.items
                     .iter()
                     .filter(|candidate| self.news_matches_filter(candidate))
                     .filter(|candidate| candidate.symbols.first() == Some(symbol))
                     .count();
-                let expanded = !self.collapsed_watchlist_news.contains(symbol);
+                let expanded = !self.news.collapsed_watchlist.contains(symbol);
                 rows.push(NewsListRow::Group {
                     symbol: symbol.clone(),
                     count,
@@ -295,7 +337,7 @@ impl App {
                 });
             }
 
-            if !self.collapsed_watchlist_news.contains(symbol) {
+            if !self.news.collapsed_watchlist.contains(symbol) {
                 rows.push(NewsListRow::Item(index));
             }
         }
@@ -303,7 +345,7 @@ impl App {
         rows
     }
     pub(crate) fn news_matches_filter(&self, item: &NewsItem) -> bool {
-        match self.news_filter_tab {
+        match self.news.filter_tab {
             NewsFilterTab::All => true,
             NewsFilterTab::Watchlist => item.relevant,
             NewsFilterTab::Macro => item.category == NewsCategory::Macro,
@@ -312,7 +354,7 @@ impl App {
         }
     }
     pub fn cycle_news_filter(&mut self, direction: SelectionDirection) {
-        self.news_filter_tab = match (self.news_filter_tab, direction) {
+        self.news.filter_tab = match (self.news.filter_tab, direction) {
             (NewsFilterTab::All, SelectionDirection::Previous) => NewsFilterTab::Crypto,
             (NewsFilterTab::All, SelectionDirection::Next) => NewsFilterTab::Watchlist,
             (NewsFilterTab::Watchlist, SelectionDirection::Previous) => NewsFilterTab::All,
@@ -324,53 +366,53 @@ impl App {
             (NewsFilterTab::Crypto, SelectionDirection::Previous) => NewsFilterTab::Reddit,
             (NewsFilterTab::Crypto, SelectionDirection::Next) => NewsFilterTab::All,
         };
-        self.news_selection = 0;
-        self.news_scroll = 0;
+        self.news.selection = 0;
+        self.news.scroll = 0;
     }
     pub fn sync_news_scroll(&mut self, visible_rows: usize) {
         if visible_rows == 0 {
-            self.news_scroll = self.news_selection;
+            self.news.scroll = self.news.selection;
             return;
         }
 
-        if self.news_selection < self.news_scroll {
-            self.news_scroll = self.news_selection;
-        } else if self.news_selection >= self.news_scroll + visible_rows {
-            self.news_scroll = self.news_selection + 1 - visible_rows;
+        if self.news.selection < self.news.scroll {
+            self.news.scroll = self.news.selection;
+        } else if self.news.selection >= self.news.scroll + visible_rows {
+            self.news.scroll = self.news.selection + 1 - visible_rows;
         }
     }
     pub(crate) fn sync_collapsed_watchlist_news(&mut self) {
         let symbols = self
-            .news_items
+            .news.items
             .iter()
             .filter(|item| item.relevant)
             .filter_map(|item| item.symbols.first().cloned())
             .collect::<HashSet<_>>();
-        self.collapsed_watchlist_news
+        self.news.collapsed_watchlist
             .retain(|symbol| symbols.contains(symbol));
-        self.known_watchlist_news_symbols
+        self.news.known_watchlist_symbols
             .retain(|symbol| symbols.contains(symbol));
         for symbol in symbols {
-            if !self.known_watchlist_news_symbols.contains(&symbol) {
-                self.collapsed_watchlist_news.insert(symbol.clone());
+            if !self.news.known_watchlist_symbols.contains(&symbol) {
+                self.news.collapsed_watchlist.insert(symbol.clone());
             }
-            self.known_watchlist_news_symbols.insert(symbol);
+            self.news.known_watchlist_symbols.insert(symbol);
         }
     }
     pub fn news_empty_message(&self) -> &str {
-        if self.news_items.is_empty() {
+        if self.news.items.is_empty() {
             return self
-                .news_status
+                .news.status
                 .as_deref()
                 .unwrap_or(self.t(Key::NewsEmpty));
         }
-        if self.news_filter_tab == NewsFilterTab::Watchlist {
+        if self.news.filter_tab == NewsFilterTab::Watchlist {
             if self.stock_watchlist().is_empty() && self.crypto_watchlist().is_empty() {
                 return self.t(Key::NewsEmptyWatchlistConfig);
             }
             return self.t(Key::NewsEmptyWatchlistMatches);
         }
-        self.news_status
+        self.news.status
             .as_deref()
             .unwrap_or(self.t(Key::NewsEmpty))
     }
@@ -416,27 +458,27 @@ impl App {
             .collect()
     }
     pub(crate) fn financial_juice_in_cooldown(&self) -> bool {
-        self.financial_juice_cooldown_until
+        self.news.financial_juice_cooldown_until
             .is_some_and(|until| Instant::now() < until)
     }
     pub(crate) fn update_financial_juice_backoff(&mut self) {
         let hit_rate_limit = self
-            .news_status
+            .news.status
             .as_deref()
             .is_some_and(|status| status.contains("FinancialJuice") && status.contains("429"));
 
         if hit_rate_limit {
-            self.financial_juice_cooldown_until =
+            self.news.financial_juice_cooldown_until =
                 Some(Instant::now() + Duration::from_secs(30 * 60));
-            if self.news_items.is_empty() {
-                self.news_status =
+            if self.news.items.is_empty() {
+                self.news.status =
                     Some("FinancialJuice paused for 30m after 429; using other feeds.".to_string());
             }
         } else if self
-            .financial_juice_cooldown_until
+            .news.financial_juice_cooldown_until
             .is_some_and(|until| Instant::now() >= until)
         {
-            self.financial_juice_cooldown_until = None;
+            self.news.financial_juice_cooldown_until = None;
         }
     }
 }

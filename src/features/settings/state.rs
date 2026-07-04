@@ -18,7 +18,7 @@ impl App {
         self.show_help = false;
         self.pending_split = false;
         self.settings.reset_confirmation = None;
-        self.selected_news = None;
+        self.news.selected = None;
     }
     pub fn selected_settings_item(&self) -> SettingsItem {
         SettingsItem::ALL[self.settings.selection.min(SettingsItem::ALL.len() - 1)]

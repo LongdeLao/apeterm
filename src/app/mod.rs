@@ -343,25 +343,11 @@ pub struct App {
     pub watchlist_suggestions: Vec<SearchResult>,
     pub watchlist_suggestion_selection: usize,
     pub market_refresh_requested: bool,
-    pub news_items: Vec<NewsItem>,
-    pub news_selection: usize,
-    pub news_scroll: usize,
-    pub news_loading: bool,
-    pub news_status: Option<String>,
-    pub selected_news: Option<NewsItem>,
-    pub news_filter_tab: NewsFilterTab,
-    pub news_source_label: String,
-    pub news_connection_status: String,
-    pub news_source_counts: Vec<(String, usize)>,
-    pub collapsed_watchlist_news: HashSet<String>,
-    pub(crate) known_watchlist_news_symbols: HashSet<String>,
-    pub(crate) last_news_refresh: Option<Instant>,
+    pub news: crate::features::news::state::NewsFeature,
     pub notes: crate::features::notes::state::NotesFeature,
     pub sec: crate::features::sec::state::SecFeature,
-    pub(crate) financial_juice_cooldown_until: Option<Instant>,
     pub agent: AgentController,
     pub spotlight: crate::features::spotlight::engine::SpotlightState,
-    pub(crate) news_receiver: Option<Receiver<NewsEvent>>,
     pub(crate) config: AppConfig,
 }
 
@@ -429,25 +415,11 @@ impl App {
             watchlist_suggestions: Vec::new(),
             watchlist_suggestion_selection: 0,
             market_refresh_requested: false,
-            news_items: Vec::new(),
-            news_selection: 0,
-            news_scroll: 0,
-            news_loading: false,
-            news_status: None,
-            selected_news: None,
-            news_filter_tab: NewsFilterTab::All,
-            news_source_label: "news feed".to_string(),
-            news_connection_status: "connecting...".to_string(),
-            news_source_counts: Vec::new(),
-            collapsed_watchlist_news: HashSet::new(),
-            known_watchlist_news_symbols: HashSet::new(),
-            last_news_refresh: None,
+            news: Default::default(),
             notes: Default::default(),
             sec: Default::default(),
-            financial_juice_cooldown_until: None,
             agent: AgentController::new(&config.llm),
             spotlight: crate::features::spotlight::engine::SpotlightState::default(),
-            news_receiver: None,
             config,
         }
     }
@@ -518,8 +490,8 @@ impl App {
         self.set_experience(self.preferences.experience.next());
     }
     pub fn close_help(&mut self) {
-        if self.selected_news.is_some() {
-            self.selected_news = None;
+        if self.news.selected.is_some() {
+            self.news.selected = None;
             return;
         }
 

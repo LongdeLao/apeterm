@@ -57,8 +57,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
             .split(chunks[2]);
         render_news_list(frame, app, panes[0], &rows);
         render_gap(frame, panes[1]);
-        let selected = rows.get(app.news_selection).and_then(|row| match row {
-            NewsListRow::Item(index) => app.news_items.get(*index),
+        let selected = rows.get(app.news.selection).and_then(|row| match row {
+            NewsListRow::Item(index) => app.news.items.get(*index),
             NewsListRow::Group { .. } => None,
         });
         render_side_detail(frame, app, panes[2], selected);
@@ -66,7 +66,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         render_news_list(frame, app, chunks[2], &rows);
     }
 
-    if let Some(item) = &app.selected_news {
+    if let Some(item) = &app.news.selected {
         render_detail(frame, app, area, item);
     }
 }
@@ -90,7 +90,7 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
         tabs.into_iter()
             .enumerate()
             .flat_map(|(index, (tab, label))| {
-                let selected = app.news_filter_tab == tab;
+                let selected = app.news.filter_tab == tab;
                 let style = if selected {
                     Style::default()
                         .fg(theme.foreground)
@@ -117,14 +117,14 @@ fn render_news_list(frame: &mut Frame, app: &App, area: Rect, rows: &[NewsListRo
         return;
     }
 
-    let scroll = app.news_scroll.min(rows.len().saturating_sub(1));
+    let scroll = app.news.scroll.min(rows.len().saturating_sub(1));
     let table_rows = rows
         .iter()
         .skip(scroll)
         .take(inner.height as usize)
         .enumerate()
         .map(|(offset, row)| {
-            let selected = scroll + offset == app.news_selection;
+            let selected = scroll + offset == app.news.selection;
             render_table_row(app, row, selected, inner.width)
         })
         .collect::<Vec<_>>();
@@ -177,7 +177,7 @@ fn render_table_row(app: &App, row: &NewsListRow, selected: bool, width: u16) ->
             .style(selected_style)
         }
         NewsListRow::Item(index) => {
-            let Some(item) = app.news_items.get(*index) else {
+            let Some(item) = app.news.items.get(*index) else {
                 return Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]);
             };
 

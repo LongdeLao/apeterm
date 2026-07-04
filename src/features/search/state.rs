@@ -19,7 +19,7 @@ impl App {
         self.page = Page::Search;
         self.show_help = false;
         self.pending_split = false;
-        self.selected_news = None;
+        self.news.selected = None;
         self.refresh_search();
     }
     pub fn move_search_selection(&mut self, direction: SelectionDirection) {
@@ -273,7 +273,7 @@ impl App {
                 self.reset_detail_view_state();
                 self.page = Page::Details;
                 self.search_message = None;
-                self.selected_news = None;
+                self.news.selected = None;
                 self.show_help = false;
                 self.spawn_live_details_fetch(symbol.clone());
                 Ok(format!("opened details for {symbol}"))

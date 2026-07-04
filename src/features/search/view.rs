@@ -1201,7 +1201,7 @@ fn dedupe_backend_headlines(app: &App, articles: &[InsightArticle]) -> Vec<Detai
 fn dedupe_local_headlines(app: &App, symbol: &str) -> Vec<DetailHeadline> {
     let mut rows = Vec::new();
     for item in app
-        .news_items
+        .news.items
         .iter()
         .filter(|item| item.symbols.iter().any(|candidate| candidate == symbol))
     {
