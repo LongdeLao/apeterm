@@ -51,7 +51,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         return;
     };
 
-    let entities = match app.sec_tab {
+    let entities = match app.sec.tab {
         SecTab::Institutional => {
             crate::features::sec::repo::list_entities(&connection, EntityKind::Institution)
         }
@@ -78,7 +78,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     let selected_entity = &entities[selected_index];
 
     render_watchlist(frame, app, panes[0], &connection, &entities, selected_index);
-    match app.sec_tab {
+    match app.sec.tab {
         SecTab::Institutional => {
             render_institution_detail(frame, app, panes[1], &connection, selected_entity)
         }
@@ -89,7 +89,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     }
 
     let footer = app
-        .sec_status
+        .sec.status
         .as_deref()
         .unwrap_or("[tab] panels  [←/→] tabs  [↑↓] navigate  [r] refresh");
     frame.render_widget(
@@ -116,7 +116,7 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
         tabs.into_iter()
             .enumerate()
             .flat_map(|(index, (tab, label))| {
-                let selected = app.sec_tab == tab;
+                let selected = app.sec.tab == tab;
                 let style = if selected {
                     Style::default()
                         .fg(theme.foreground)
@@ -144,7 +144,7 @@ fn render_watchlist(
     selected_index: usize,
 ) {
     let theme = current_theme(app.theme_name);
-    let title = match app.sec_tab {
+    let title = match app.sec.tab {
         SecTab::Institutional => " institutions ",
         SecTab::Ceos => " insiders ",
         SecTab::Congress => " members ",
@@ -180,7 +180,7 @@ fn render_watchlist(
         } else {
             Style::default().fg(theme.foreground)
         };
-        let glyph = match app.sec_tab {
+        let glyph = match app.sec.tab {
             SecTab::Institutional => {
                 let deltas = crate::features::sec::repo::holding_deltas(connection, entity.id)
                     .unwrap_or_default();
@@ -226,7 +226,7 @@ fn render_watchlist(
             }
         };
         let mut spans = vec![glyph];
-        if app.sec_tab == SecTab::Congress {
+        if app.sec.tab == SecTab::Congress {
             let name_width = entities
                 .iter()
                 .map(|value| value.name.len())
@@ -624,7 +624,7 @@ fn render_detail_header(
             ),
             Span::raw("  "),
             Span::styled(
-                if app.sec_loading {
+                if app.sec.loading {
                     "refreshing"
                 } else {
                     "[r] refresh"

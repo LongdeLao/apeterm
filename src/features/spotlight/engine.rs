@@ -107,11 +107,11 @@ impl SpotlightPanel {
             SpotlightPanel::Notes => app.spotlight_focus_panel(PanelId::Notes, WindowKind::Notes),
             SpotlightPanel::Congress => {
                 app.spotlight_focus_panel(PanelId::Calendar, WindowKind::Sec);
-                app.sec_tab = SecTab::Congress;
+                app.sec.tab = SecTab::Congress;
             }
             SpotlightPanel::Sec13F => {
                 app.spotlight_focus_panel(PanelId::Calendar, WindowKind::Sec);
-                app.sec_tab = SecTab::Institutional;
+                app.sec.tab = SecTab::Institutional;
             }
             SpotlightPanel::Search => app.open_search(),
             SpotlightPanel::Settings => app.open_settings(),
