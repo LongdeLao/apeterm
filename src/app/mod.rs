@@ -15,8 +15,8 @@ use crate::{
     config::AppConfig,
     features::news::feed::FetchResult,
     features::search::engine::{InstrumentDetails, LiveInstrumentDetails, SearchResult},
-    features::watchlist::market::{MarketEvent, MarketSession},
-    features::watchlist::quotes::{Quote, update_market_quotes},
+    features::watchlist::market::MarketEvent,
+    features::watchlist::quotes::update_market_quotes,
     i18n::{I18n, Key, Locale},
     preferences::{AgentStyle, Experience, ExplanationLevel, Language, Tone, UserPreferences},
 };
