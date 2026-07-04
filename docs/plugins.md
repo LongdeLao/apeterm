@@ -30,12 +30,12 @@ central dispatcher — pages, events, and app state keep their direct wiring.
 
 | Layer | Location | Responsibility |
 | --- | --- | --- |
-| Plugins | `src/plugins/` | Plugin metadata; future home for reusable feature/business logic |
-| Feature logic | `src/news.rs`, `src/sec/`, `src/search.rs`, … | Business logic, testable without the TUI |
-| App state | `src/app/` | `App` owns runtime state; `app/*_feature.rs` holds per-feature state/coordination |
-| Rendering | `src/pages/`, `src/ui.rs` | Draw views from `App` state; no mutation, no business logic |
+| Plugins | `src/plugins/` | Plugin metadata (the registry of feature areas) |
+| Features | `src/features/<name>/` | One folder per feature: `state.rs` (feature struct + `impl App` coordination), `view.rs` (rendering), `repo.rs` (persistence), plus feature-specific logic (`engine.rs`, `feed.rs`, …) |
+| App state | `src/app.rs` | `App` owns cross-feature state and holds one feature struct per feature (`app.news`, `app.sec`, …) |
+| Rendering | `src/features/*/view.rs`, `src/ui/` | Draw views from `App` state; `ui/` is the tab router plus shared widgets (`panel`, `fill`); no mutation, no business logic |
 | Input | `src/event.rs` | Route keyboard/input events to `App` methods |
-| Agent | `src/agent/` | Natural-language interaction; may call feature logic |
+| Agent | `src/features/agent/` | Natural-language interaction; may call feature logic |
 | Backend | `src/backend.rs`, API clients | Cloud/backend communication |
 
 Keep these separate: rendering must not mutate state, event routing must not
@@ -44,10 +44,12 @@ stays testable without launching the TUI.
 
 ## Adding a new feature area
 
-1. Put reusable business logic in its own module (under `src/plugins/<name>/`
-   if it is self-contained, or a top-level module like the existing features).
-2. Add per-feature `App` state and coordination in `src/app/<name>_feature.rs`.
-3. Add rendering in `src/pages/<name>.rs`.
+1. Create `src/features/<name>/` with a thin `mod.rs` that re-exports the
+   feature struct and `render()`.
+2. Define a `<Name>Feature` struct in `state.rs` holding the feature's state;
+   add it as a field on `App` and keep coordination methods as `impl App`
+   blocks in the same file.
+3. Add rendering in `view.rs`; persistence, if any, in `repo.rs`.
 4. Route input in `src/event.rs` by calling `App` methods.
 5. Register the feature: add a `PluginId` variant and a `PluginSpec` entry in
    `src/plugins/registry.rs`, listing the modules it lives in. Mark it
