@@ -5,7 +5,7 @@
 //! in `features/*/view.rs`, input routing in `event.rs`. `plugins::registry` maps each
 //! feature area to its modules.
 
-use std::{collections::HashSet, path::PathBuf, sync::mpsc::Receiver, time::Instant};
+use std::{path::PathBuf, sync::mpsc::Receiver};
 
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +13,7 @@ use crate::features::agent::AgentController;
 use crate::{
     backend::BackendInsight,
     config::AppConfig,
-    features::news::feed::{FetchResult, NewsItem},
+    features::news::feed::FetchResult,
     features::search::engine::{InstrumentDetails, LiveInstrumentDetails, SearchResult},
     features::watchlist::market::{MarketEvent, MarketSession},
     features::watchlist::quotes::{Quote, update_market_quotes},
