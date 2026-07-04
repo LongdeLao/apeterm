@@ -1,5 +1,7 @@
 use crate::app::*;
-use crate::{db, news, search};
+use crate::db;
+use crate::features::news::feed as news;
+use crate::features::search::engine as search;
 
 impl App {
     pub fn notes_visible(&self) -> Vec<db::notes_repo::NoteRow> {

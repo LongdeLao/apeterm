@@ -13,12 +13,12 @@ use crate::features::agent::AgentController;
 use crate::{
     backend::BackendInsight,
     config::AppConfig,
+    features::news::feed::{FetchResult, NewsItem},
+    features::search::engine::{InstrumentDetails, LiveInstrumentDetails, SearchResult},
+    features::watchlist::market::{MarketEvent, MarketSession},
+    features::watchlist::quotes::{Quote, update_market_quotes},
     i18n::{I18n, Key, Locale},
-    market::{MarketEvent, MarketSession},
-    news::{FetchResult, NewsItem},
     preferences::{AgentStyle, Experience, ExplanationLevel, Language, Tone, UserPreferences},
-    quotes::{Quote, update_market_quotes},
-    search::{InstrumentDetails, LiveInstrumentDetails, SearchResult},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,7 +376,7 @@ pub struct App {
     pub(crate) last_sec_refresh: Option<Instant>,
     pub(crate) financial_juice_cooldown_until: Option<Instant>,
     pub agent: AgentController,
-    pub spotlight: crate::spotlight::SpotlightState,
+    pub spotlight: crate::features::spotlight::engine::SpotlightState,
     pub(crate) news_receiver: Option<Receiver<NewsEvent>>,
     pub(crate) config: AppConfig,
 }
@@ -478,7 +478,7 @@ impl App {
             last_sec_refresh: None,
             financial_juice_cooldown_until: None,
             agent: AgentController::new(&config.llm),
-            spotlight: crate::spotlight::SpotlightState::default(),
+            spotlight: crate::features::spotlight::engine::SpotlightState::default(),
             news_receiver: None,
             config,
         }

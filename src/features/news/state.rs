@@ -1,9 +1,11 @@
 use crate::app::*;
 use crate::{
     db,
+    features::news::feed::{
+        self as news, NewsCategory, NewsItem, NewsPriority, NewsRuntimeConfig, WatchlistMatcher,
+    },
+    features::search::engine as search,
     i18n::Key,
-    news::{self, NewsCategory, NewsItem, NewsPriority, NewsRuntimeConfig, WatchlistMatcher},
-    search,
 };
 use chrono::{DateTime, Local};
 use std::{

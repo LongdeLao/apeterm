@@ -5,7 +5,7 @@ impl App {
         self.spotlight.open = true;
         self.spotlight.query.clear();
         self.spotlight.selection = 0;
-        crate::spotlight::refresh(self);
+        crate::features::spotlight::engine::refresh(self);
     }
     pub fn close_spotlight(&mut self) {
         self.spotlight.open = false;
@@ -18,11 +18,11 @@ impl App {
             return;
         }
         self.spotlight.query.push(character);
-        crate::spotlight::refresh(self);
+        crate::features::spotlight::engine::refresh(self);
     }
     pub fn spotlight_pop_char(&mut self) {
         self.spotlight.query.pop();
-        crate::spotlight::refresh(self);
+        crate::features::spotlight::engine::refresh(self);
     }
     pub fn spotlight_move_selection(&mut self, direction: SelectionDirection) {
         let count = self.spotlight.results.len();
@@ -47,12 +47,12 @@ impl App {
         self.close_spotlight();
 
         match result.entry {
-            crate::spotlight::SpotlightEntry::Symbol(symbol) => {
+            crate::features::spotlight::engine::SpotlightEntry::Symbol(symbol) => {
                 let _ = self.agent_open_symbol(&symbol);
             }
-            crate::spotlight::SpotlightEntry::Panel(panel) => panel.apply(self),
-            crate::spotlight::SpotlightEntry::Action(index) => {
-                if let Some(action) = crate::spotlight::actions().get(index) {
+            crate::features::spotlight::engine::SpotlightEntry::Panel(panel) => panel.apply(self),
+            crate::features::spotlight::engine::SpotlightEntry::Action(index) => {
+                if let Some(action) = crate::features::spotlight::engine::actions().get(index) {
                     (action.run)(self);
                 }
             }

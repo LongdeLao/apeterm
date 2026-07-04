@@ -1,9 +1,9 @@
 use crate::app::*;
 use crate::features::watchlist::state::normalize_symbol;
 use crate::{
+    features::search::engine::{self as search},
     i18n::Key,
     metrics::{MetricId, visible_key_stats},
-    search::{self},
 };
 use std::{sync::mpsc, thread};
 

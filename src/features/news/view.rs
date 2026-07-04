@@ -9,8 +9,8 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     app::{App, NewsFilterTab, NewsListRow, PanelId},
+    features::news::feed::{NewsItem, NewsPriority},
     i18n::Key,
-    news::{NewsItem, NewsPriority},
     theme::current_theme,
     ui::panel,
 };

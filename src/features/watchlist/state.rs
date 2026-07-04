@@ -1,5 +1,6 @@
 use crate::app::*;
-use crate::{config::NamedWatchlist, search};
+use crate::config::NamedWatchlist;
+use crate::features::search::engine as search;
 
 impl App {
     pub fn stock_watchlist(&self) -> &[String] {

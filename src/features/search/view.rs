@@ -18,12 +18,12 @@ use crate::{
     app::{App, DetailTimeframe, InputTarget, Page, SearchAssetKind},
     backend::InsightArticle,
     db,
+    features::search::engine::{HistoryPoint, LiveInstrumentDetails},
     i18n::{Key, Locale},
     metrics::{
         MetricId, metric_explanation_key, metric_label_key, visible_key_stats, visible_metrics,
     },
     preferences::ExplanationLevel,
-    search::{HistoryPoint, LiveInstrumentDetails},
     theme::current_theme,
     ui,
     ui::fill::Fill,
@@ -596,7 +596,7 @@ fn draw_x_axis(
 fn render_detail_sidebar(
     frame: &mut Frame,
     app: &App,
-    details: &crate::search::InstrumentDetails,
+    details: &crate::features::search::engine::InstrumentDetails,
     theme: crate::theme::Theme,
     area: Rect,
 ) {
@@ -631,7 +631,7 @@ fn render_detail_sidebar(
 
 fn detail_sidebar_lines(
     app: &App,
-    details: &crate::search::InstrumentDetails,
+    details: &crate::features::search::engine::InstrumentDetails,
     theme: crate::theme::Theme,
     width: usize,
 ) -> Vec<Line<'static>> {
@@ -671,7 +671,7 @@ fn detail_sidebar_lines(
 fn push_quote_section(
     lines: &mut Vec<Line<'static>>,
     app: &App,
-    details: &crate::search::InstrumentDetails,
+    details: &crate::features::search::engine::InstrumentDetails,
     theme: crate::theme::Theme,
     width: usize,
 ) {
@@ -955,7 +955,7 @@ fn push_focused_metric_explanation(
 fn push_profile(
     lines: &mut Vec<Line<'static>>,
     app: &App,
-    details: &crate::search::InstrumentDetails,
+    details: &crate::features::search::engine::InstrumentDetails,
     theme: crate::theme::Theme,
     width: usize,
 ) {
@@ -1892,7 +1892,7 @@ mod detail_render_tests {
         app::Page,
         backend::{BackendInsight, InsightContextResponse, InsightExplanationResponse},
         config::AppConfig,
-        search::{InstrumentDetails, LiveInstrumentDetails},
+        features::search::engine::{InstrumentDetails, LiveInstrumentDetails},
     };
 
     #[test]

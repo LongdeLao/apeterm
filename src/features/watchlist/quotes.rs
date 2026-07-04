@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::market::{MarketEvent, MarketSession};
+use crate::features::watchlist::market::{MarketEvent, MarketSession};
 
 const QUOTE_FLASH_DURATION: Duration = Duration::from_millis(650);
 

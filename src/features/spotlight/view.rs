@@ -7,8 +7,8 @@ use ratatui::{
 
 use crate::{
     app::App,
+    features::spotlight::engine::{MAX_RESULTS, SpotlightCategory},
     i18n::Key,
-    spotlight::{MAX_RESULTS, SpotlightCategory},
     theme::current_theme,
 };
 

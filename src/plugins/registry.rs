@@ -19,7 +19,7 @@ pub fn registered_plugins() -> &'static [PluginSpec] {
             name: "Watchlist",
             description: "Track stocks and crypto across named watchlists with live quotes.",
             experimental: false,
-            modules: &["features/watchlist/", "quotes.rs"],
+            modules: &["features/watchlist/"],
         },
         PluginSpec {
             id: PluginId::Notes,
@@ -40,7 +40,7 @@ pub fn registered_plugins() -> &'static [PluginSpec] {
             name: "News",
             description: "News feed fetching, filtering, and enrichment.",
             experimental: false,
-            modules: &["news.rs", "features/news/", "enrich.rs"],
+            modules: &["features/news/"],
         },
         PluginSpec {
             id: PluginId::Sec,

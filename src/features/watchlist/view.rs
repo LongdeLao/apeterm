@@ -11,9 +11,9 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     app::{App, InputTarget, PanelId, WatchlistEditMode, WatchlistEditRow, WatchlistKind},
+    features::watchlist::market::MarketSession,
+    features::watchlist::quotes::{PriceDirection, Quote},
     i18n::Key,
-    market::MarketSession,
-    quotes::{PriceDirection, Quote},
     theme::current_theme,
     ui::panel,
 };

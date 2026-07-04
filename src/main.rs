@@ -10,17 +10,12 @@ mod event;
 mod features;
 mod i18n;
 mod import;
-mod market;
 mod metrics;
-mod news;
 // Metadata-only for now; nothing consumes the registry outside of tests, so
 // suppress unused warnings until a first caller lands.
 #[allow(dead_code, unused_imports)]
 mod plugins;
 mod preferences;
-mod quotes;
-mod search;
-mod spotlight;
 mod theme;
 mod ui;
 
@@ -35,6 +30,7 @@ use crossterm::{
     },
 };
 use features::sec;
+use features::watchlist::market;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use rusqlite::params;
 

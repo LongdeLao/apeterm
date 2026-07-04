@@ -9,7 +9,8 @@ use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 
 use crate::{
     app::{App, PanelId, SecTab, WindowKind},
-    db, search,
+    db,
+    features::search::engine as search,
 };
 
 pub const MAX_RESULTS: usize = 10;
