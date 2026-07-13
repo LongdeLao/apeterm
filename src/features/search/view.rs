@@ -230,10 +230,15 @@ fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, 
     } else {
         theme.negative
     };
-    let fill_color = if last.close >= first.close {
-        theme.positive_dim
+    let show_fill = app.search.detail_timeframe != DetailTimeframe::OneDay;
+    let fill_color = if show_fill {
+        Some(if last.close >= first.close {
+            theme.positive_dim
+        } else {
+            theme.negative_dim
+        })
     } else {
-        theme.negative_dim
+        None
     };
 
     let chunks = Layout::default()
@@ -268,16 +273,18 @@ fn render_chart_panel(frame: &mut Frame, app: &App, theme: crate::theme::Theme, 
         .x_bounds([x_min, x_max])
         .y_bounds([y_min, y_max])
         .paint(|ctx| {
-            for point in &history {
-                ctx.draw(&CanvasLine::new(
-                    point.ts as f64,
-                    y_min,
-                    point.ts as f64,
-                    point.close,
-                    fill_color,
-                ));
+            if let Some(fill_color) = fill_color {
+                for point in &history {
+                    ctx.draw(&CanvasLine::new(
+                        point.ts as f64,
+                        y_min,
+                        point.ts as f64,
+                        point.close,
+                        fill_color,
+                    ));
+                }
+                ctx.layer();
             }
-            ctx.layer();
             for pair in history.windows(2) {
                 ctx.draw(&CanvasLine::new(
                     pair[0].ts as f64,
@@ -447,6 +454,12 @@ fn visible_history(app: &App) -> Vec<HistoryPoint> {
         .filter(|point| point.ts >= cutoff)
         .cloned()
         .collect::<Vec<_>>();
+    if app.search.detail_timeframe == DetailTimeframe::OneDay {
+        let intraday = intraday_points(&filtered);
+        if intraday.len() >= 2 {
+            return intraday;
+        }
+    }
     if filtered.len() >= 2 {
         return filtered;
     }
@@ -460,6 +473,26 @@ fn visible_history(app: &App) -> Vec<HistoryPoint> {
         DetailTimeframe::FiveYears | DetailTimeframe::Max => all.len(),
     };
     all[all.len().saturating_sub(fallback)..].to_vec()
+}
+
+fn intraday_points(history: &[HistoryPoint]) -> Vec<HistoryPoint> {
+    const MAX_INTRADAY_GAP_SECONDS: i64 = 30 * 60;
+
+    history
+        .iter()
+        .enumerate()
+        .filter(|(index, point)| {
+            let previous_gap = index
+                .checked_sub(1)
+                .map(|previous| point.ts.saturating_sub(history[previous].ts));
+            let next_gap = history
+                .get(index + 1)
+                .map(|next| next.ts.saturating_sub(point.ts));
+            previous_gap.is_some_and(|gap| gap <= MAX_INTRADAY_GAP_SECONDS)
+                || next_gap.is_some_and(|gap| gap <= MAX_INTRADAY_GAP_SECONDS)
+        })
+        .map(|(_, point)| point.clone())
+        .collect()
 }
 
 fn draw_price_grid(
@@ -584,7 +617,8 @@ fn draw_x_axis(
     for (ts, label) in x_axis_labels(app.search.detail_timeframe, history, area.width) {
         let x = time_to_x(area, ts, history);
         let width = text_width(&label) as u16;
-        let start = x.saturating_sub(width / 2).max(area.x);
+        let max_start = area.right().saturating_sub(width);
+        let start = x.saturating_sub(width / 2).clamp(area.x, max_start);
         let max_width = area.right().saturating_sub(start) as usize;
         buffer.set_stringn(
             start,
@@ -1653,6 +1687,7 @@ fn format_ts_label_for_timeframe(ts: i64, timeframe: DetailTimeframe) -> String 
         return "-".to_string();
     };
     let format = match timeframe {
+        DetailTimeframe::OneDay => "%H:%M",
         DetailTimeframe::OneYear | DetailTimeframe::FiveYears | DetailTimeframe::Max => "%b '%y",
         _ => "%b %-d",
     };
@@ -1927,6 +1962,53 @@ mod detail_render_tests {
         app.preferences.explanations = crate::preferences::ExplanationLevel::Beginner;
         push_focused_metric_explanation(&mut lines, &app, theme, 80, Some(MetricId::MarketCap));
         assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn one_day_history_uses_intraday_points_when_available() {
+        let mut app = detail_app();
+        app.search.detail_timeframe = DetailTimeframe::OneDay;
+        let start = Local
+            .with_ymd_and_hms(2026, 7, 2, 13, 30, 0)
+            .single()
+            .expect("date")
+            .timestamp();
+        let mut history = vec![
+            HistoryPoint {
+                ts: start - 2 * 86_400,
+                close: 197.0,
+                volume: Some(100_000_000.0),
+            },
+            HistoryPoint {
+                ts: start - 86_400,
+                close: 196.0,
+                volume: Some(100_000_000.0),
+            },
+            HistoryPoint {
+                ts: start - 6 * 60 * 60,
+                close: 199.0,
+                volume: Some(100_000_000.0),
+            },
+        ];
+        history.extend((0..120).map(|minute| HistoryPoint {
+            ts: start + minute * 60,
+            close: 195.0 + minute as f64 * 0.01,
+            volume: Some(250_000.0),
+        }));
+        app.search
+            .selected_live_details
+            .as_mut()
+            .expect("live details")
+            .history = history;
+
+        let visible = visible_history(&app);
+
+        assert_eq!(visible.len(), 120);
+        assert_eq!(visible.first().expect("first").ts, start);
+        assert_eq!(
+            format_ts_label_for_timeframe(start, DetailTimeframe::OneDay).len(),
+            5
+        );
     }
 
     fn detail_app() -> App {

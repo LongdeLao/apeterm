@@ -81,6 +81,23 @@ def days_until(timestamp):
     return days if days >= 0 else None
 
 
+def add_history_points(points, history):
+    for ts, row in history.iterrows():
+        close = number(row.get("Close"))
+        if close is None:
+            continue
+        volume = number(row.get("Volume"))
+        try:
+            unix_ts = int(ts.timestamp())
+        except Exception:
+            continue
+        points[unix_ts] = {
+            "ts": unix_ts,
+            "close": round(close, 4),
+            "volume": volume,
+        }
+
+
 def main():
     symbol = sys.stdin.read().strip().upper()
     result = {
@@ -134,24 +151,15 @@ def main():
         result["day_low"] = number(pick(fast, ["day_low", "dayLow"]))
 
         try:
-            history = ticker.history(period="5y", interval="1d")[["Close", "Volume"]].dropna(
+            points = {}
+            daily = ticker.history(period="5y", interval="1d")[["Close", "Volume"]].dropna(
                 subset=["Close"]
             )
-            points = {}
-            for ts, row in history.iterrows():
-                close = number(row.get("Close"))
-                if close is None:
-                    continue
-                volume = number(row.get("Volume"))
-                try:
-                    unix_ts = int(ts.timestamp())
-                except Exception:
-                    continue
-                points[unix_ts] = {
-                    "ts": unix_ts,
-                    "close": round(close, 4),
-                    "volume": volume,
-                }
+            add_history_points(points, daily)
+            intraday = ticker.history(period="1d", interval="1m")[["Close", "Volume"]].dropna(
+                subset=["Close"]
+            )
+            add_history_points(points, intraday)
             result["history"] = [points[key] for key in sorted(points)]
         except Exception:
             result["history"] = []
