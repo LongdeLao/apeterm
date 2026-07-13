@@ -327,7 +327,7 @@ fn quote_line<'a>(
         spans.push(Span::raw("  "));
         spans.push(Span::styled("VOL ", Style::default().fg(foreground)));
         spans.push(Span::styled(
-            format_compact_volume(volume),
+            format!("{:>6}", format_compact_volume(volume)),
             Style::default().fg(theme.muted),
         ));
     }
@@ -341,7 +341,7 @@ fn quote_line<'a>(
         spans.push(Span::raw("  "));
         spans.push(Span::styled("RV ", Style::default().fg(foreground)));
         spans.push(Span::styled(
-            format!("{rvol:.1}x"),
+            format!("{:>4.1}x", rvol),
             Style::default().fg(rvol_color),
         ));
     }
