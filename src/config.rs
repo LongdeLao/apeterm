@@ -617,7 +617,7 @@ mod tests {
             config.preferences.experience,
             crate::preferences::Experience::Pro
         );
-        assert_eq!(config.preferences.tone, crate::preferences::Tone::Normal);
+        assert_eq!(config.preferences.tone, crate::i18n::Tone::Normal);
         assert_eq!(
             config.preferences.explanations,
             crate::preferences::ExplanationLevel::Off
@@ -652,7 +652,7 @@ mod tests {
             decoded.preferences.experience,
             crate::preferences::Experience::Pro
         );
-        assert_eq!(decoded.preferences.tone, crate::preferences::Tone::Normal);
+        assert_eq!(decoded.preferences.tone, crate::i18n::Tone::Normal);
         assert_eq!(
             decoded.preferences.explanations,
             crate::preferences::ExplanationLevel::Off

@@ -2,7 +2,7 @@ use std::env;
 
 use serde::{Deserialize, Serialize};
 
-use crate::i18n::Locale;
+use crate::i18n::{Locale, Tone};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -25,14 +25,6 @@ pub enum Experience {
     Simple,
     #[default]
     Pro,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum Tone {
-    #[default]
-    Normal,
-    Ape,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

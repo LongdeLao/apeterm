@@ -10,8 +10,8 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     app::{App, InputTarget, SettingsItem},
-    i18n::Key,
-    preferences::{AgentStyle, Experience, ExplanationLevel, Language, PreferencePreset, Tone},
+    i18n::{Key, Tone},
+    preferences::{AgentStyle, Experience, ExplanationLevel, Language, PreferencePreset},
     theme::current_theme,
     ui,
     ui::fill::Fill,

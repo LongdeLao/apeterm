@@ -16,8 +16,8 @@ use crate::{
     features::news::feed::FetchResult,
     features::watchlist::market::MarketEvent,
     features::watchlist::quotes::update_market_quotes,
-    i18n::{I18n, Key, Locale},
-    preferences::{AgentStyle, Experience, ExplanationLevel, Language, Tone, UserPreferences},
+    i18n::{I18n, Key, Locale, Tone},
+    preferences::{AgentStyle, Experience, ExplanationLevel, Language, UserPreferences},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

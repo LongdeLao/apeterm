@@ -6,9 +6,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::IntoEnumIterator;
 use unicode_width::UnicodeWidthStr;
 
-use crate::preferences::Tone;
-
 pub mod keys;
+
+/// Copy voice for localized strings; `Ape` selects `@ape` key variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Tone {
+    #[default]
+    Normal,
+    Ape,
+}
 
 pub use keys::Key;
 

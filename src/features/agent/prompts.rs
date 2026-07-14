@@ -1,6 +1,5 @@
-use crate::preferences::{
-    AgentStyle, Experience, ExplanationLevel, Language, Tone, UserPreferences,
-};
+use crate::i18n::Tone;
+use crate::preferences::{AgentStyle, Experience, ExplanationLevel, Language, UserPreferences};
 
 pub fn build_system_prompt(prefs: &UserPreferences) -> String {
     let blocks = [
