@@ -190,7 +190,7 @@ pub fn recent_insider_txs(
 ) -> rusqlite::Result<Vec<InsiderTx>> {
     let mut statement = connection.prepare(
         "
-        SELECT ticker, filed_at, transaction_date, code, shares, price_usd, shares_owned_after, accession_no
+        SELECT ticker, transaction_date, code, shares, price_usd, shares_owned_after
         FROM insider_transactions
         WHERE entity_id = ?1
         ORDER BY transaction_date DESC, accession_no DESC
@@ -200,13 +200,11 @@ pub fn recent_insider_txs(
     let rows = statement.query_map(params![entity_id, limit as i64], |row| {
         Ok(InsiderTx {
             ticker: row.get(0)?,
-            filed_at: row.get(1)?,
-            transaction_date: row.get(2)?,
-            code: row.get(3)?,
-            shares: row.get(4)?,
-            price_usd: row.get(5)?,
-            shares_owned_after: row.get(6)?,
-            accession_no: row.get(7)?,
+            transaction_date: row.get(1)?,
+            code: row.get(2)?,
+            shares: row.get(3)?,
+            price_usd: row.get(4)?,
+            shares_owned_after: row.get(5)?,
         })
     })?;
     rows.collect()
@@ -219,8 +217,7 @@ pub fn recent_congress_txs(
 ) -> rusqlite::Result<Vec<CongressTx>> {
     let mut statement = connection.prepare(
         "
-        SELECT chamber, source_url, filed_at, transaction_date, notification_date, owner_code,
-               asset_name, ticker, transaction_type, amount_range, description, filing_id
+        SELECT chamber, filed_at, transaction_date, asset_name, ticker, transaction_type, amount_range
         FROM congress_transactions
         WHERE entity_id = ?1
         ORDER BY transaction_date DESC, filing_id DESC, transaction_index ASC
@@ -230,17 +227,12 @@ pub fn recent_congress_txs(
     let rows = statement.query_map(params![entity_id, limit as i64], |row| {
         Ok(CongressTx {
             chamber: row.get(0)?,
-            source_url: row.get(1)?,
-            filed_at: row.get(2)?,
-            transaction_date: row.get(3)?,
-            notification_date: row.get(4)?,
-            owner_code: row.get(5)?,
-            asset_name: row.get(6)?,
-            ticker: row.get(7)?,
-            transaction_type: row.get(8)?,
-            amount_range: row.get(9)?,
-            description: row.get(10)?,
-            filing_id: row.get(11)?,
+            filed_at: row.get(1)?,
+            transaction_date: row.get(2)?,
+            asset_name: row.get(3)?,
+            ticker: row.get(4)?,
+            transaction_type: row.get(5)?,
+            amount_range: row.get(6)?,
         })
     })?;
     rows.collect()

@@ -55,29 +55,22 @@ pub struct HoldingDelta {
 #[derive(Debug, Clone)]
 pub struct InsiderTx {
     pub ticker: String,
-    pub filed_at: String,
     pub transaction_date: String,
     pub code: String,
     pub shares: f64,
     pub price_usd: Option<f64>,
     pub shares_owned_after: Option<f64>,
-    pub accession_no: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct CongressTx {
     pub chamber: String,
-    pub source_url: String,
     pub filed_at: Option<String>,
     pub transaction_date: String,
-    pub notification_date: Option<String>,
-    pub owner_code: Option<String>,
     pub asset_name: String,
     pub ticker: Option<String>,
     pub transaction_type: String,
     pub amount_range: String,
-    pub description: Option<String>,
-    pub filing_id: String,
 }
 
 #[derive(Debug, Clone)]
