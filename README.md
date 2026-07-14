@@ -45,24 +45,16 @@ If you are working from a checkout instead:
 INSTALL_BROKER_DEPS=1 BUILD_FROM_SOURCE=1 ./install.sh
 ```
 
-Connect Trade Republic and import the read-only portfolio snapshot:
+Open ApeTerm, go to Portfolio from `Ctrl+P`, then use the broker controls:
 
-```bash
-apeterm broker connect
-apeterm broker sync
-apeterm broker status
-```
+- `c` connects Trade Republic
+- `r` syncs the read-only portfolio snapshot
+- `d` disconnects Trade Republic from ApeTerm
 
-`connect` starts pytr's interactive login. pytr owns credentials and session
+Connect starts pytr's interactive login. pytr owns credentials and session
 cookies under `~/.pytr`; ApeTerm only stores the normalized portfolio snapshot
 in its own application data directory.
 
-Use this to remove Trade Republic data from ApeTerm:
-
-```bash
-apeterm broker disconnect
-```
-
 Because pytr uses Trade Republic's private API, login or sync can temporarily
-break when Trade Republic changes it. Re-run `apeterm broker connect` when a
+break when Trade Republic changes it. Press `c` in Portfolio again when a
 session expires.

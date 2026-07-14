@@ -140,7 +140,7 @@ fn footer_text(app: &App) -> String {
     match app.page {
         Page::Search => app.t(Key::SearchFooter).to_string(),
         Page::Settings => app.t(Key::SettingsFooter).to_string(),
-        Page::Portfolio => "r sync · ↑↓ select · Esc back · Ctrl+P commands".to_string(),
+        Page::Portfolio => "c connect · r sync · d disconnect · ↑↓ select · Esc back".to_string(),
         Page::Alerts => "n quick alert · t toggle · d delete · Esc back".to_string(),
         Page::Screener => "←→ screen · ↑↓ select · Esc back".to_string(),
         Page::Compare => "↑↓ select · d remove · Esc back".to_string(),

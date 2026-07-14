@@ -105,6 +105,7 @@ impl I18n {
             .filter(|value| !value.trim().is_empty())
     }
 
+    #[cfg(debug_assertions)]
     pub fn assert_complete(&self) {
         let missing = missing_locale_keys(&self.locales);
         debug_assert!(

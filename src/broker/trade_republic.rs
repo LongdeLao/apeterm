@@ -10,7 +10,9 @@ const LOCAL_PYTHON: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.venv/bin/pytho
 const LOCAL_BRIDGE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/broker/trade_republic.py");
 
 pub fn available() -> bool {
-    Command::new(python_command())
+    let mut command = Command::new(python_command());
+    configure_python_environment(&mut command);
+    command
         .args(["-c", "import pytr"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -20,10 +22,9 @@ pub fn available() -> bool {
 
 pub fn connect() -> io::Result<()> {
     ensure_available()?;
-    let status = Command::new(python_command())
-        .arg(bridge_path())
-        .arg("connect")
-        .status()?;
+    let mut command = Command::new(python_command());
+    configure_python_environment(&mut command);
+    let status = command.arg(bridge_path()).arg("connect").status()?;
     if status.success() {
         Ok(())
     } else {
@@ -36,7 +37,9 @@ pub fn sync(output: &Path) -> io::Result<PortfolioSnapshot> {
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
-    let result = Command::new(python_command())
+    let mut command = Command::new(python_command());
+    configure_python_environment(&mut command);
+    let result = command
         .arg(bridge_path())
         .arg("sync")
         .arg("--output")
@@ -45,13 +48,27 @@ pub fn sync(output: &Path) -> io::Result<PortfolioSnapshot> {
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr).trim().to_string();
         return Err(io::Error::other(if stderr.is_empty() {
-            "Trade Republic sync failed; run `apeterm broker connect` in a terminal".to_string()
+            "Trade Republic sync failed; open Portfolio and press c to connect".to_string()
         } else {
             stderr
         }));
     }
     let bytes = fs::read(output)?;
     serde_json::from_slice(&bytes).map_err(io::Error::other)
+}
+
+fn configure_python_environment(command: &mut Command) {
+    if let Some(parent) = Path::new(&python_command()).parent()
+        && !parent.as_os_str().is_empty()
+    {
+        let mut paths = vec![parent.to_path_buf()];
+        if let Some(path) = env::var_os("PATH") {
+            paths.extend(env::split_paths(&path));
+        }
+        if let Ok(path) = env::join_paths(paths) {
+            command.env("PATH", path);
+        }
+    }
 }
 
 fn ensure_available() -> io::Result<()> {

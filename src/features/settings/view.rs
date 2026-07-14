@@ -208,9 +208,11 @@ fn settings_row(app: &App, item: SettingsItem) -> (SettingsItem, String, String,
             if app.portfolio.snapshot.is_some() {
                 "Connected · Enter to open".to_string()
             } else if app.portfolio.syncing {
-                "Syncing…".to_string()
+                "Syncing...".to_string()
+            } else if app.config.broker.trade_republic_enabled {
+                "Connected · press r in Portfolio".to_string()
             } else {
-                "Optional · apeterm broker connect".to_string()
+                "Optional · Enter to connect".to_string()
             },
             false,
             app.portfolio.snapshot.is_some(),

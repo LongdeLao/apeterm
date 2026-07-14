@@ -1,7 +1,8 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Rect},
-    style::{Modifier, Style},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 
@@ -23,8 +24,19 @@ pub fn render_panel(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId)
 
 fn render_area(frame: &mut Frame, app: &App, area: Rect, panel_id: Option<PanelId>) {
     let theme = current_theme(app.theme_name);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(if panel_id.is_some() { 0 } else { 5 }),
+            Constraint::Min(0),
+        ])
+        .split(area);
+    if panel_id.is_none() {
+        render_broker_header(frame, app, chunks[0]);
+    }
+
     let title = if app.portfolio.syncing {
-        " Portfolio · syncing… "
+        " Portfolio - syncing... "
     } else {
         " Portfolio "
     };
@@ -75,14 +87,16 @@ fn render_area(frame: &mut Frame, app: &App, area: Rect, panel_id: Option<PanelI
             },
         ));
     if app.portfolio.snapshot.is_none() {
-        let message = app.portfolio.status.as_deref().unwrap_or(
-            "No broker portfolio connected. Run `apeterm broker connect`, then press r to sync.",
-        );
+        let message = app
+            .portfolio
+            .status
+            .as_deref()
+            .unwrap_or("No broker portfolio connected. Press c to connect Trade Republic.");
         frame.render_widget(
             Paragraph::new(message)
                 .style(Style::default().fg(theme.muted))
                 .block(block),
-            area,
+            chunks[1],
         );
     } else {
         frame.render_widget(
@@ -103,7 +117,63 @@ fn render_area(frame: &mut Frame, app: &App, area: Rect, panel_id: Option<PanelI
                 ),
             )
             .block(block),
-            area,
+            chunks[1],
         );
     }
+}
+
+fn render_broker_header(frame: &mut Frame, app: &App, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+    let theme = current_theme(app.theme_name);
+    let status = if app.config.broker.trade_republic_enabled {
+        "connected"
+    } else {
+        "not connected"
+    };
+    let sync = if app.portfolio.syncing {
+        "syncing"
+    } else {
+        "idle"
+    };
+    let last = app
+        .portfolio
+        .snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.synced_at.as_str())
+        .unwrap_or("never");
+    let status_line = app.portfolio.status.as_deref().unwrap_or(
+        "Press c to connect, r to sync, d to disconnect. pytr keeps credentials in ~/.pytr.",
+    );
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(
+                "Trade Republic",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!("  {status}  {sync}")),
+        ]),
+        Line::from(format!("Last sync: {last}")),
+        Line::from(status_line.to_string()),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(Style::default().fg(theme.foreground))
+            .block(
+                Block::default()
+                    .title(" Broker ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(
+                        if app.config.broker.trade_republic_enabled {
+                            theme.positive
+                        } else {
+                            Color::Rgb(120, 120, 120)
+                        },
+                    )),
+            ),
+        area,
+    );
 }

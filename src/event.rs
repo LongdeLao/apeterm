@@ -533,7 +533,10 @@ fn handle_settings_key(app: &mut App, key_code: KeyCode) {
 
 fn handle_portfolio_key(app: &mut App, key_code: KeyCode) -> bool {
     match key_code {
+        KeyCode::Char('c') => app.connect_trade_republic(),
         KeyCode::Char('r') => app.refresh_portfolio(),
+        KeyCode::Char('s') => app.refresh_portfolio(),
+        KeyCode::Char('d') => app.disconnect_trade_republic(),
         KeyCode::Up | KeyCode::Char('k') => {
             app.move_portfolio_selection(SelectionDirection::Previous)
         }

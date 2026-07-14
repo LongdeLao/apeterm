@@ -12,17 +12,15 @@ Install the optional dependency:
 python -m pip install -r broker/requirements.txt
 ```
 
-Connect and sync:
+Open ApeTerm, use `Ctrl+P` to open Portfolio, then use the broker controls:
 
-```bash
-apeterm broker connect
-apeterm broker sync
-apeterm broker status
-```
+- `c` connects Trade Republic
+- `r` syncs the read-only portfolio snapshot
+- `d` disconnects Trade Republic from ApeTerm
 
-`connect` runs pytr's interactive web login and lets pytr own credentials and
+Connect runs pytr's interactive web login and lets pytr own credentials and
 session cookies in `~/.pytr`. ApeTerm only stores a normalized portfolio JSON
 snapshot in its application data directory. Syncing never places orders.
 
 Because pytr uses a private API, Trade Republic changes can temporarily break
-login or sync. Re-run `apeterm broker connect` when a web session expires.
+login or sync. Press `c` in Portfolio again when a web session expires.

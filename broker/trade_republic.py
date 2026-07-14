@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import subprocess
 import sys
@@ -18,7 +19,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def ensure_venv_path() -> None:
+    """pytr shells out to `playwright`; expose the private venv scripts dir."""
+    scripts_dir = Path(sys.executable).parent
+    current_path = os.environ.get("PATH", "")
+    os.environ["PATH"] = f"{scripts_dir}{os.pathsep}{current_path}" if current_path else str(scripts_dir)
+
+
 def pytr(*args: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
+    ensure_venv_path()
     return subprocess.run(
         [sys.executable, "-m", "pytr", *args],
         check=False,

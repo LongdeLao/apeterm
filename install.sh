@@ -193,6 +193,7 @@ install_python_deps() {
   "$SHARE_DIR/.venv/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" >/dev/null
   if [[ "$INSTALL_BROKER_DEPS" == "1" ]]; then
     "$SHARE_DIR/.venv/bin/pip" install -r "$BROKER_DIR/requirements.txt" >/dev/null
+    "$SHARE_DIR/.venv/bin/python" -m playwright install chromium >/dev/null
   fi
 }
 

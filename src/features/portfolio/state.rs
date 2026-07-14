@@ -1,4 +1,13 @@
-use std::{path::Path, sync::mpsc, thread};
+use std::{fs, io, path::Path, sync::mpsc, thread};
+
+use crossterm::{
+    cursor::{Hide, MoveTo, SetCursorStyle, Show},
+    execute,
+    terminal::{
+        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode,
+    },
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -66,13 +75,53 @@ impl App {
         self.show_help = false;
     }
 
+    pub fn connect_trade_republic(&mut self) {
+        if self.portfolio.syncing {
+            return;
+        }
+        if !crate::broker::trade_republic::available() {
+            self.portfolio.status = Some(
+                "Trade Republic needs optional deps. Reinstall with INSTALL_BROKER_DEPS=1."
+                    .to_string(),
+            );
+            return;
+        }
+
+        let _ = suspend_terminal_for_broker_prompt();
+        println!("ApeTerm Trade Republic connect");
+        println!(
+            "pytr owns credentials and cookies in ~/.pytr. ApeTerm stores only a portfolio snapshot."
+        );
+        println!();
+        let result = crate::broker::trade_republic::connect();
+        println!();
+        println!("Press Enter to return to ApeTerm.");
+        let mut line = String::new();
+        let _ = io::stdin().read_line(&mut line);
+        let _ = restore_terminal_after_broker_prompt();
+
+        match result {
+            Ok(()) => {
+                self.config.broker.trade_republic_enabled = true;
+                let _ = self.config.save();
+                self.portfolio.status =
+                    Some("Trade Republic connected. Syncing portfolio...".to_string());
+                self.notify("Trade Republic connected");
+                self.refresh_portfolio();
+            }
+            Err(error) => {
+                self.portfolio.status = Some(format!("Trade Republic connect failed: {error}"));
+            }
+        }
+    }
+
     pub fn refresh_portfolio(&mut self) {
         if self.portfolio.syncing {
             return;
         }
         if !self.config.broker.trade_republic_enabled {
             self.portfolio.status =
-                Some("Trade Republic is optional. Run `apeterm broker connect` first.".to_string());
+                Some("Trade Republic is optional. Press c to connect from this page.".to_string());
             return;
         }
         let path = self.config.broker.portfolio_cache_path.clone();
@@ -104,6 +153,21 @@ impl App {
             }
             Err(error) => self.portfolio.status = Some(error),
         }
+    }
+
+    pub fn disconnect_trade_republic(&mut self) {
+        self.config.broker.trade_republic_enabled = false;
+        let _ = self.config.save();
+        self.portfolio.snapshot = None;
+        self.portfolio.selection = 0;
+        self.portfolio.syncing = false;
+        self.portfolio.receiver = None;
+        let _ = fs::remove_file(&self.config.broker.portfolio_cache_path);
+        self.portfolio.status = Some(
+            "Trade Republic disconnected. pytr credentials in ~/.pytr were left untouched."
+                .to_string(),
+        );
+        self.notify("Trade Republic disconnected");
     }
 
     pub fn move_portfolio_selection(&mut self, direction: SelectionDirection) {
@@ -144,6 +208,30 @@ impl App {
             snapshot.cash
         )
     }
+}
+
+fn suspend_terminal_for_broker_prompt() -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(
+        io::stdout(),
+        SetCursorStyle::DefaultUserShape,
+        Show,
+        MoveTo(0, 0),
+        Clear(ClearType::All),
+        LeaveAlternateScreen
+    )
+}
+
+fn restore_terminal_after_broker_prompt() -> io::Result<()> {
+    enable_raw_mode()?;
+    execute!(
+        io::stdout(),
+        EnterAlternateScreen,
+        Clear(ClearType::All),
+        MoveTo(0, 0),
+        SetCursorStyle::SteadyBar,
+        Hide
+    )
 }
 
 #[cfg(test)]
