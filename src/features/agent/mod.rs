@@ -5,6 +5,7 @@ pub mod messages;
 pub mod openrouter;
 pub mod prompts;
 pub mod state;
+pub mod synthesis;
 pub mod tool_call;
 pub mod tools;
 pub mod view;

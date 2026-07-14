@@ -118,7 +118,8 @@ Available tools:
 {tools}
 
 Tool rules:
-- Prefer tool calls for any app action (watchlists, opening symbols).
+- Prefer synthesis tools for market questions; the app has structured local context that is more reliable than guessing.
+- Prefer action tools only when the user explicitly asks to change app state (watchlists, opening symbols).
 - Always include a short "note" with a tool call; it is shown to the user while the tool runs.
 - After a successful tool run, confirm in one short sentence.
 - Tool results arrive as {"type": "tool_result", ...}; after one, either call another tool or send a final message.

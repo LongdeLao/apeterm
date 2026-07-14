@@ -31,6 +31,23 @@ pub fn build_context(app: &App) -> String {
     if let Some(details) = &app.search.selected_details {
         let _ = writeln!(context, "selected symbol: {}", details.symbol);
     }
+    if let Some(item) = &app.news.selected {
+        let _ = writeln!(context, "selected news: {} ({})", item.title, item.source);
+    }
+    if let Some(note) = app.notes_selected_row() {
+        let preview = note
+            .body
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(100)
+            .collect::<String>();
+        let _ = writeln!(context, "selected note: {preview}");
+    }
+    if let Some(entity_id) = app.selected_sec_entity_id() {
+        let _ = writeln!(context, "selected SEC entity id: {entity_id}");
+    }
 
     let lists = app.watchlists();
     let active_index = app.active_watchlist_index();

@@ -8,6 +8,18 @@ use serde_json::json;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolCall {
     ReadCurrentContext,
+    SummarizeWatchlist,
+    ExplainWatchlistMove,
+    FindWatchlistOutliers,
+    CompareSymbols { symbols: Vec<String> },
+    BriefSelectedSymbol,
+    SummarizeSymbolNews { symbol: String },
+    FindNewsWithoutPosition,
+    SummarizeNotesForSymbol { symbol: String },
+    BuildSymbolTimeline { symbol: String },
+    SummarizeSecActivity,
+    FindSecWatchlistMatches,
+    SurfaceAttentionList,
     ListWatchlists,
     CreateWatchlist { name: String },
     AddSymbolToWatchlist { symbol: String },
@@ -19,6 +31,18 @@ impl ToolCall {
     pub fn name(&self) -> &'static str {
         match self {
             ToolCall::ReadCurrentContext => "read_current_context",
+            ToolCall::SummarizeWatchlist => "summarize_watchlist",
+            ToolCall::ExplainWatchlistMove => "explain_watchlist_move",
+            ToolCall::FindWatchlistOutliers => "find_watchlist_outliers",
+            ToolCall::CompareSymbols { .. } => "compare_symbols",
+            ToolCall::BriefSelectedSymbol => "brief_selected_symbol",
+            ToolCall::SummarizeSymbolNews { .. } => "summarize_symbol_news",
+            ToolCall::FindNewsWithoutPosition => "find_news_without_position",
+            ToolCall::SummarizeNotesForSymbol { .. } => "summarize_notes_for_symbol",
+            ToolCall::BuildSymbolTimeline { .. } => "build_symbol_timeline",
+            ToolCall::SummarizeSecActivity => "summarize_sec_activity",
+            ToolCall::FindSecWatchlistMatches => "find_sec_watchlist_matches",
+            ToolCall::SurfaceAttentionList => "surface_attention_list",
             ToolCall::ListWatchlists => "list_watchlists",
             ToolCall::CreateWatchlist { .. } => "create_watchlist",
             ToolCall::AddSymbolToWatchlist { .. } => "add_symbol_to_watchlist",
@@ -163,9 +187,51 @@ fn decode_tool(tool: &str, args: &serde_json::Value) -> Result<ToolCall, String>
             .map(str::to_string)
             .ok_or_else(|| format!("tool `{tool}` requires a string arg `{key}`"))
     };
+    let symbols_arg = || -> Result<Vec<String>, String> {
+        let values = args
+            .get("symbols")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| format!("tool `{tool}` requires an array arg `symbols`"))?;
+        let mut symbols = Vec::new();
+        for value in values {
+            let symbol = value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("tool `{tool}` requires `symbols` to contain strings"))?;
+            let symbol = symbol.to_ascii_uppercase();
+            if !symbols.contains(&symbol) {
+                symbols.push(symbol);
+            }
+        }
+        if !(2..=5).contains(&symbols.len()) {
+            return Err(format!("tool `{tool}` requires 2 to 5 symbols"));
+        }
+        Ok(symbols)
+    };
 
     match tool {
         "read_current_context" => Ok(ToolCall::ReadCurrentContext),
+        "summarize_watchlist" => Ok(ToolCall::SummarizeWatchlist),
+        "explain_watchlist_move" => Ok(ToolCall::ExplainWatchlistMove),
+        "find_watchlist_outliers" => Ok(ToolCall::FindWatchlistOutliers),
+        "compare_symbols" => Ok(ToolCall::CompareSymbols {
+            symbols: symbols_arg()?,
+        }),
+        "brief_selected_symbol" => Ok(ToolCall::BriefSelectedSymbol),
+        "summarize_symbol_news" => Ok(ToolCall::SummarizeSymbolNews {
+            symbol: string_arg("symbol")?.to_ascii_uppercase(),
+        }),
+        "find_news_without_position" => Ok(ToolCall::FindNewsWithoutPosition),
+        "summarize_notes_for_symbol" => Ok(ToolCall::SummarizeNotesForSymbol {
+            symbol: string_arg("symbol")?.to_ascii_uppercase(),
+        }),
+        "build_symbol_timeline" => Ok(ToolCall::BuildSymbolTimeline {
+            symbol: string_arg("symbol")?.to_ascii_uppercase(),
+        }),
+        "summarize_sec_activity" => Ok(ToolCall::SummarizeSecActivity),
+        "find_sec_watchlist_matches" => Ok(ToolCall::FindSecWatchlistMatches),
+        "surface_attention_list" => Ok(ToolCall::SurfaceAttentionList),
         "list_watchlists" => Ok(ToolCall::ListWatchlists),
         "create_watchlist" => Ok(ToolCall::CreateWatchlist {
             name: string_arg("name")?,
@@ -282,6 +348,39 @@ mod tests {
     #[test]
     fn unknown_tool_is_invalid() {
         let raw = r#"{"type":"tool_call","tool":"summarize_news","args":{}}"#;
+        assert!(matches!(
+            parse_assistant_action(raw),
+            AssistantAction::Invalid { .. }
+        ));
+    }
+
+    #[test]
+    fn parses_synthesis_tool_without_args() {
+        let raw = r#"{"type":"tool_call","tool":"summarize_watchlist","args":{}}"#;
+        assert!(matches!(
+            parse_assistant_action(raw),
+            AssistantAction::ToolCall {
+                call: ToolCall::SummarizeWatchlist,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_compare_symbols() {
+        let raw = r#"{"type":"tool_call","tool":"compare_symbols","args":{"symbols":["nvda","AMD","NVDA"]}}"#;
+        match parse_assistant_action(raw) {
+            AssistantAction::ToolCall {
+                call: ToolCall::CompareSymbols { symbols },
+                ..
+            } => assert_eq!(symbols, vec!["NVDA", "AMD"]),
+            other => panic!("unexpected action: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_compare_symbols_with_too_few_symbols() {
+        let raw = r#"{"type":"tool_call","tool":"compare_symbols","args":{"symbols":["NVDA"]}}"#;
         assert!(matches!(
             parse_assistant_action(raw),
             AssistantAction::Invalid { .. }
