@@ -48,6 +48,7 @@ pub enum InputTarget {
     Watchlist,
     Notes,
     NotesSearch,
+    BrokerLogin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -542,6 +543,9 @@ impl App {
                 self.watchlist.suggestion_selection = 0;
                 self.clear_text_input_mode();
             }
+            AppMode::TextInput(InputTarget::BrokerLogin) => {
+                self.cancel_trade_republic_login();
+            }
             // Notes editing is fully handled in event.rs before this dispatcher runs.
             AppMode::TextInput(InputTarget::Notes) => {}
             AppMode::TextInput(InputTarget::NotesSearch) => {
@@ -574,6 +578,9 @@ impl App {
             AppMode::TextInput(InputTarget::Watchlist) => {
                 self.save_watchlist_input();
                 self.clear_text_input_mode();
+            }
+            AppMode::TextInput(InputTarget::BrokerLogin) => {
+                self.submit_trade_republic_login_input()
             }
             AppMode::TextInput(InputTarget::Notes) => {}
             AppMode::TextInput(InputTarget::NotesSearch) => self.clear_text_input_mode(),
@@ -611,6 +618,9 @@ impl App {
                     None => {}
                 }
                 self.refresh_watchlist_suggestions();
+            }
+            AppMode::TextInput(InputTarget::BrokerLogin) => {
+                self.push_trade_republic_login_char(character);
             }
             AppMode::TextInput(InputTarget::Notes) => {}
             AppMode::TextInput(InputTarget::NotesSearch) => {
@@ -653,6 +663,9 @@ impl App {
                     None => {}
                 }
                 self.refresh_watchlist_suggestions();
+            }
+            AppMode::TextInput(InputTarget::BrokerLogin) => {
+                self.pop_trade_republic_login_char();
             }
             AppMode::TextInput(InputTarget::Notes) => {}
             AppMode::TextInput(InputTarget::NotesSearch) => {

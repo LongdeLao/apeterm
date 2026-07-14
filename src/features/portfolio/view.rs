@@ -1,24 +1,105 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    app::{App, PanelId},
+    app::{App, InputTarget, PanelId},
+    features::portfolio::state::TradeRepublicLoginStep,
     theme::current_theme,
     ui,
+    ui::util::centered_rect,
 };
 
 pub fn render(frame: &mut Frame, app: &App) {
     render_area(frame, app, ui::content_area(frame.area(), app), None);
+    if app.portfolio.login.is_some() {
+        render_login_modal(frame, app);
+    }
 }
 
 pub fn render_panel(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
     if app.is_panel_open(panel_id) {
         render_area(frame, app, area, Some(panel_id));
+    }
+}
+
+fn render_login_modal(frame: &mut Frame, app: &App) {
+    let theme = current_theme(app.theme_name);
+    let background = theme.background.unwrap_or(Color::Black);
+    let area = centered_rect(ui::content_area(frame.area(), app), 66, 11);
+    let Some(login) = &app.portfolio.login else {
+        return;
+    };
+    let (label, value) = match login.step {
+        TradeRepublicLoginStep::Phone => ("Phone", login.input.clone()),
+        TradeRepublicLoginStep::Pin => ("PIN", "•".repeat(login.input.chars().count())),
+        TradeRepublicLoginStep::Code => ("Code/TAN", login.input.clone()),
+    };
+    let mut helper = match login.step {
+        TradeRepublicLoginStep::Phone => "Use international format, e.g. +4912345678.".to_string(),
+        TradeRepublicLoginStep::Pin => {
+            "PIN is hidden while typing and only held in memory.".to_string()
+        }
+        TradeRepublicLoginStep::Code => "Enter the code/TAN from Trade Republic.".to_string(),
+    };
+    if let Some(countdown) = login.countdown
+        && login.step == TradeRepublicLoginStep::Code
+    {
+        helper = format!("{helper} SMS resend may require waiting about {countdown}s.");
+    }
+    let status = app.portfolio.status.as_deref().unwrap_or_default();
+    let lines = vec![
+        Line::from(Span::styled(
+            "Connect Trade Republic",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(helper, Style::default().fg(theme.muted))),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(format!("{label}: "), Style::default().fg(theme.muted)),
+            Span::styled(value.as_str(), Style::default().fg(theme.foreground)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(status, Style::default().fg(theme.muted))),
+    ];
+    let border = if app.portfolio.login_busy {
+        theme.muted
+    } else if app.is_text_input_target(InputTarget::BrokerLogin) {
+        theme.accent
+    } else {
+        theme.muted
+    };
+    let panel = Paragraph::new(lines)
+        .style(Style::default().bg(background))
+        .block(
+            Block::default()
+                .title(" Broker Login ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border))
+                .style(Style::default().bg(background)),
+        );
+    frame.render_widget(Clear, area);
+    frame.render_widget(panel, area);
+    if app.is_text_input_target(InputTarget::BrokerLogin) && !app.portfolio.login_busy {
+        let cursor_value = match login.step {
+            TradeRepublicLoginStep::Pin => "•".repeat(login.input.chars().count()),
+            _ => login.input.clone(),
+        };
+        let label_width = UnicodeWidthStr::width(format!("{label}: ").as_str()) as u16;
+        frame.set_cursor_position(Position::new(
+            area.x.saturating_add(
+                1 + label_width + UnicodeWidthStr::width(cursor_value.as_str()) as u16,
+            ),
+            area.y.saturating_add(5),
+        ));
     }
 }
 

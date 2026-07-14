@@ -122,6 +122,9 @@ fn footer_text(app: &App) -> String {
     if app.is_text_input_target(crate::app::InputTarget::NotesSearch) {
         return app.t(Key::NotesSearchFooter).to_string();
     }
+    if app.is_text_input_target(crate::app::InputTarget::BrokerLogin) {
+        return "Enter submit · Esc cancel · credentials stay with pytr".to_string();
+    }
 
     if let Some(editor) = &app.watchlist.editor {
         return match editor.mode {

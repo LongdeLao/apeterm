@@ -30,8 +30,9 @@ dashboard panels. Narrow terminals automatically switch to a focused pane.
 ## Add Trade Republic portfolio
 
 Trade Republic support is read-only and disabled by default. It uses the
-unofficial `pytr` project; ApeTerm never reads or stores the phone number, PIN,
-verification code, or pytr session cookies.
+unofficial `pytr` project. Phone, PIN, and verification code are entered inside
+the Portfolio TUI login modal; ApeTerm only keeps them in memory for that login
+step, while pytr owns credentials and session cookies under `~/.pytr`.
 
 Install ApeTerm with optional broker dependencies:
 
@@ -51,9 +52,9 @@ Open ApeTerm, go to Portfolio from `Ctrl+P`, then use the broker controls:
 - `r` syncs the read-only portfolio snapshot
 - `d` disconnects Trade Republic from ApeTerm
 
-Connect starts pytr's interactive login. pytr owns credentials and session
-cookies under `~/.pytr`; ApeTerm only stores the normalized portfolio snapshot
-in its own application data directory.
+Connect opens ApeTerm's TUI login modal. Enter your phone number, PIN, and the
+Trade Republic code/TAN when requested. ApeTerm stores only the normalized
+portfolio snapshot in its own application data directory.
 
 Because pytr uses Trade Republic's private API, login or sync can temporarily
 break when Trade Republic changes it. Press `c` in Portfolio again when a

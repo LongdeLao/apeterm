@@ -1,17 +1,11 @@
-use std::{fs, io, path::Path, sync::mpsc, thread};
-
-use crossterm::{
-    cursor::{Hide, MoveTo, SetCursorStyle, Show},
-    execute,
-    terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode,
-    },
-};
+use std::{fs, path::Path, sync::mpsc, thread};
 
 use serde::{Deserialize, Serialize};
 
-use crate::app::{App, AppMode, Page, SelectionDirection};
+use crate::{
+    app::{App, AppMode, InputTarget, Page, SelectionDirection},
+    broker::trade_republic::LoginStartResult,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortfolioPosition {
@@ -42,7 +36,36 @@ pub struct PortfolioFeature {
     pub selection: usize,
     pub status: Option<String>,
     pub syncing: bool,
+    pub login: Option<TradeRepublicLogin>,
+    pub login_busy: bool,
     pub(crate) receiver: Option<mpsc::Receiver<Result<PortfolioSnapshot, String>>>,
+    pub(crate) login_receiver: Option<mpsc::Receiver<Result<BrokerLoginEvent, String>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TradeRepublicLogin {
+    pub step: TradeRepublicLoginStep,
+    pub phone: String,
+    pub pin: String,
+    pub process_id: Option<String>,
+    pub countdown: Option<u64>,
+    pub input: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TradeRepublicLoginStep {
+    Phone,
+    Pin,
+    Code,
+}
+
+#[derive(Debug)]
+pub(crate) enum BrokerLoginEvent {
+    Connected,
+    CodeRequired {
+        process_id: String,
+        countdown: Option<u64>,
+    },
 }
 
 impl PortfolioFeature {
@@ -62,7 +85,10 @@ impl PortfolioFeature {
             selection: 0,
             status: None,
             syncing: false,
+            login: None,
+            login_busy: false,
             receiver: None,
+            login_receiver: None,
         }
     }
 }
@@ -86,33 +112,132 @@ impl App {
             );
             return;
         }
+        self.portfolio.login = Some(TradeRepublicLogin {
+            step: TradeRepublicLoginStep::Phone,
+            phone: String::new(),
+            pin: String::new(),
+            process_id: None,
+            countdown: None,
+            input: String::new(),
+        });
+        self.portfolio.status = Some("Enter your Trade Republic phone number.".to_string());
+        self.begin_text_input(InputTarget::BrokerLogin);
+    }
 
-        let _ = suspend_terminal_for_broker_prompt();
-        println!("ApeTerm Trade Republic connect");
-        println!(
-            "pytr owns credentials and cookies in ~/.pytr. ApeTerm stores only a portfolio snapshot."
-        );
-        println!();
-        let result = crate::broker::trade_republic::connect();
-        println!();
-        println!("Press Enter to return to ApeTerm.");
-        let mut line = String::new();
-        let _ = io::stdin().read_line(&mut line);
-        let _ = restore_terminal_after_broker_prompt();
+    pub fn cancel_trade_republic_login(&mut self) {
+        if self.portfolio.login_busy {
+            self.portfolio.status =
+                Some("Trade Republic login is running; wait for the current step.".to_string());
+            return;
+        }
+        self.portfolio.login = None;
+        self.portfolio.login_receiver = None;
+        self.clear_text_input_mode();
+        self.portfolio.status = Some("Trade Republic login cancelled.".to_string());
+    }
 
-        match result {
-            Ok(()) => {
-                self.config.broker.trade_republic_enabled = true;
-                let _ = self.config.save();
-                self.portfolio.status =
-                    Some("Trade Republic connected. Syncing portfolio...".to_string());
-                self.notify("Trade Republic connected");
-                self.refresh_portfolio();
+    pub fn push_trade_republic_login_char(&mut self, character: char) {
+        if let Some(login) = &mut self.portfolio.login {
+            login.input.push(character);
+        }
+    }
+
+    pub fn pop_trade_republic_login_char(&mut self) {
+        if let Some(login) = &mut self.portfolio.login {
+            login.input.pop();
+        }
+    }
+
+    pub fn submit_trade_republic_login_input(&mut self) {
+        if self.portfolio.login_busy {
+            return;
+        }
+        let Some(login) = &mut self.portfolio.login else {
+            self.clear_text_input_mode();
+            return;
+        };
+        let value = login.input.trim().to_string();
+        match login.step {
+            TradeRepublicLoginStep::Phone => {
+                if value.is_empty() {
+                    self.portfolio.status = Some("Phone number is required.".to_string());
+                    return;
+                }
+                login.phone = value;
+                login.input.clear();
+                login.step = TradeRepublicLoginStep::Pin;
+                self.portfolio.status = Some("Enter your Trade Republic PIN.".to_string());
             }
-            Err(error) => {
-                self.portfolio.status = Some(format!("Trade Republic connect failed: {error}"));
+            TradeRepublicLoginStep::Pin => {
+                if value.is_empty() {
+                    self.portfolio.status = Some("PIN is required.".to_string());
+                    return;
+                }
+                login.pin = value;
+                login.input.clear();
+                self.start_trade_republic_login();
+            }
+            TradeRepublicLoginStep::Code => {
+                if value.is_empty() {
+                    self.portfolio.status = Some("Code/TAN is required.".to_string());
+                    return;
+                }
+                login.input.clear();
+                self.complete_trade_republic_login(value);
             }
         }
+    }
+
+    fn start_trade_republic_login(&mut self) {
+        let Some(login) = &self.portfolio.login else {
+            return;
+        };
+        let phone = login.phone.clone();
+        let pin = login.pin.clone();
+        let (sender, receiver) = mpsc::channel();
+        self.portfolio.login_receiver = Some(receiver);
+        self.portfolio.login_busy = true;
+        self.clear_text_input_mode();
+        self.portfolio.status = Some("Starting Trade Republic login...".to_string());
+        thread::spawn(move || {
+            let result = crate::broker::trade_republic::login_start(&phone, &pin)
+                .map(|result| match result {
+                    LoginStartResult::Connected => BrokerLoginEvent::Connected,
+                    LoginStartResult::CodeRequired {
+                        process_id,
+                        countdown,
+                    } => BrokerLoginEvent::CodeRequired {
+                        process_id,
+                        countdown,
+                    },
+                })
+                .map_err(|error| error.to_string());
+            let _ = sender.send(result);
+        });
+    }
+
+    fn complete_trade_republic_login(&mut self, code: String) {
+        let Some(login) = &self.portfolio.login else {
+            return;
+        };
+        let Some(process_id) = login.process_id.clone() else {
+            self.portfolio.status = Some("Missing Trade Republic login process.".to_string());
+            return;
+        };
+        let phone = login.phone.clone();
+        let pin = login.pin.clone();
+        let (sender, receiver) = mpsc::channel();
+        self.portfolio.login_receiver = Some(receiver);
+        self.portfolio.login_busy = true;
+        self.clear_text_input_mode();
+        self.portfolio.status = Some("Completing Trade Republic login...".to_string());
+        thread::spawn(move || {
+            let result =
+                crate::broker::trade_republic::login_complete(&phone, &pin, &process_id, &code)
+                    .map(|()| BrokerLoginEvent::Connected)
+                    .map_err(|error| error.to_string());
+            let _ = sender.send(result);
+        });
     }
 
     pub fn refresh_portfolio(&mut self) {
@@ -136,6 +261,7 @@ impl App {
     }
 
     pub fn poll_portfolio(&mut self) {
+        self.poll_trade_republic_login();
         let result = self
             .portfolio
             .receiver
@@ -155,6 +281,46 @@ impl App {
         }
     }
 
+    fn poll_trade_republic_login(&mut self) {
+        let result = self
+            .portfolio
+            .login_receiver
+            .as_ref()
+            .and_then(|receiver| receiver.try_recv().ok());
+        let Some(result) = result else { return };
+        self.portfolio.login_receiver = None;
+        self.portfolio.login_busy = false;
+        match result {
+            Ok(BrokerLoginEvent::Connected) => {
+                self.config.broker.trade_republic_enabled = true;
+                let _ = self.config.save();
+                self.portfolio.login = None;
+                self.clear_text_input_mode();
+                self.portfolio.status =
+                    Some("Trade Republic connected. Syncing portfolio...".to_string());
+                self.notify("Trade Republic connected");
+                self.refresh_portfolio();
+            }
+            Ok(BrokerLoginEvent::CodeRequired {
+                process_id,
+                countdown,
+            }) => {
+                if let Some(login) = &mut self.portfolio.login {
+                    login.process_id = Some(process_id);
+                    login.countdown = countdown;
+                    login.step = TradeRepublicLoginStep::Code;
+                    login.input.clear();
+                }
+                self.portfolio.status = Some("Enter the code/TAN from Trade Republic.".to_string());
+                self.begin_text_input(InputTarget::BrokerLogin);
+            }
+            Err(error) => {
+                self.portfolio.status = Some(format!("Trade Republic login failed: {error}"));
+                self.begin_text_input(InputTarget::BrokerLogin);
+            }
+        }
+    }
+
     pub fn disconnect_trade_republic(&mut self) {
         self.config.broker.trade_republic_enabled = false;
         let _ = self.config.save();
@@ -162,6 +328,10 @@ impl App {
         self.portfolio.selection = 0;
         self.portfolio.syncing = false;
         self.portfolio.receiver = None;
+        self.portfolio.login = None;
+        self.portfolio.login_busy = false;
+        self.portfolio.login_receiver = None;
+        self.clear_text_input_mode();
         let _ = fs::remove_file(&self.config.broker.portfolio_cache_path);
         self.portfolio.status = Some(
             "Trade Republic disconnected. pytr credentials in ~/.pytr were left untouched."
@@ -208,30 +378,6 @@ impl App {
             snapshot.cash
         )
     }
-}
-
-fn suspend_terminal_for_broker_prompt() -> io::Result<()> {
-    disable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        SetCursorStyle::DefaultUserShape,
-        Show,
-        MoveTo(0, 0),
-        Clear(ClearType::All),
-        LeaveAlternateScreen
-    )
-}
-
-fn restore_terminal_after_broker_prompt() -> io::Result<()> {
-    enable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        EnterAlternateScreen,
-        Clear(ClearType::All),
-        MoveTo(0, 0),
-        SetCursorStyle::SteadyBar,
-        Hide
-    )
 }
 
 #[cfg(test)]
