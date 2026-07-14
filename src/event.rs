@@ -12,9 +12,8 @@ use crate::app::{
 };
 
 pub fn handle_event(app: &mut App, event: Event) {
-    match event {
-        Event::Key(key) => handle_key_event(app, key.code, key.modifiers),
-        _ => {}
+    if let Event::Key(key) = event {
+        handle_key_event(app, key.code, key.modifiers)
     }
 }
 
@@ -35,10 +34,10 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
         return;
     }
 
-    if let AppMode::TextInput(target) = app.mode {
-        if handle_text_input_key(app, target, key_code, modifiers) {
-            return;
-        }
+    if let AppMode::TextInput(target) = app.mode
+        && handle_text_input_key(app, target, key_code, modifiers)
+    {
+        return;
     }
 
     // The dashboard help overlay owns the keyboard while open: only its own

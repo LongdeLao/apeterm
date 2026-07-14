@@ -230,23 +230,22 @@ fn ranked_results(app: &App, query: &str) -> Vec<SpotlightResult> {
     let matcher = SkimMatcherV2::default();
     let mut scored: Vec<(i64, SpotlightResult)> = Vec::new();
 
-    if let Ok(connection) = db::open(&app.ticker_db_path) {
-        if let Ok(symbols) =
+    if let Ok(connection) = db::open(&app.ticker_db_path)
+        && let Ok(symbols) =
             search::spotlight_prefix_search(&connection, query, SYMBOL_CANDIDATE_LIMIT)
-        {
-            for symbol_result in symbols {
-                let haystack = format!("{} {}", symbol_result.symbol, symbol_result.name);
-                if let Some(score) = score(&matcher, &haystack, None, query) {
-                    scored.push((
-                        score,
-                        SpotlightResult {
-                            category: SpotlightCategory::Symbol,
-                            label: format!("{} — {}", symbol_result.symbol, symbol_result.name),
-                            subtitle: symbol_result.exchange,
-                            entry: SpotlightEntry::Symbol(symbol_result.symbol),
-                        },
-                    ));
-                }
+    {
+        for symbol_result in symbols {
+            let haystack = format!("{} {}", symbol_result.symbol, symbol_result.name);
+            if let Some(score) = score(&matcher, &haystack, None, query) {
+                scored.push((
+                    score,
+                    SpotlightResult {
+                        category: SpotlightCategory::Symbol,
+                        label: format!("{} — {}", symbol_result.symbol, symbol_result.name),
+                        subtitle: symbol_result.exchange,
+                        entry: SpotlightEntry::Symbol(symbol_result.symbol),
+                    },
+                ));
             }
         }
     }

@@ -35,7 +35,7 @@ impl App {
             ));
         }
         events.extend(self.agent_sec_events_for_symbol(&symbol)?);
-        events.sort_by(|left, right| right.0.cmp(&left.0));
+        events.sort_by_key(|event| std::cmp::Reverse(event.0));
         if events.is_empty() {
             return Ok(format!("no local timeline events found for {symbol}"));
         }

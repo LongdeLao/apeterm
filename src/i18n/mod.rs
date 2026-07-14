@@ -21,8 +21,9 @@ pub use keys::Key;
 
 include!(concat!(env!("OUT_DIR"), "/embedded_locales.rs"));
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Locale {
+    #[default]
     En,
     De,
     Other(String),
@@ -111,12 +112,6 @@ impl I18n {
             "missing locale keys:\n{}",
             missing.join("\n")
         );
-    }
-}
-
-impl Default for Locale {
-    fn default() -> Self {
-        Self::En
     }
 }
 
@@ -209,7 +204,7 @@ fn missing_locale_keys(locales: &HashMap<Locale, HashMap<String, String>>) -> Ve
     let mut missing = Vec::new();
 
     for locale in locales.keys() {
-        let Some(entries) = locales.get(&locale) else {
+        let Some(entries) = locales.get(locale) else {
             missing.push(format!("{locale:?}: <locale file missing>"));
             continue;
         };

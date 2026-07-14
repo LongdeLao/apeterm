@@ -127,13 +127,13 @@ fn sync_single_entity(
 
         if result.is_ok() {
             latest_success = Some(filing.accession_no);
-        } else if std::env::var("APETERM_SEC_DEBUG").is_ok() {
-            if let Err(error) = result {
-                eprintln!(
-                    "sec filing failed entity={} accession={} error={error}",
-                    entity.name, filing.accession_no
-                );
-            }
+        } else if std::env::var("APETERM_SEC_DEBUG").is_ok()
+            && let Err(error) = result
+        {
+            eprintln!(
+                "sec filing failed entity={} accession={} error={error}",
+                entity.name, filing.accession_no
+            );
         }
     }
 
@@ -409,10 +409,10 @@ fn temp_pdf_path() -> PathBuf {
 }
 
 fn python_command() -> String {
-    if let Ok(value) = env::var(ENV_PYTHON) {
-        if !value.trim().is_empty() {
-            return value;
-        }
+    if let Ok(value) = env::var(ENV_PYTHON)
+        && !value.trim().is_empty()
+    {
+        return value;
     }
     if Path::new(LOCAL_PYTHON).exists() {
         LOCAL_PYTHON.to_string()

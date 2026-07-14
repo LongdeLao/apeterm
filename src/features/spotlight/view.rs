@@ -15,7 +15,7 @@ use crate::{
 
 pub fn render(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
-    let visible_rows = app.spotlight.results.len().min(MAX_RESULTS).max(1);
+    let visible_rows = app.spotlight.results.len().clamp(1, MAX_RESULTS);
     let height = (visible_rows as u16).saturating_add(4);
     let area = centered_rect_percent(frame.area(), 60, height);
 

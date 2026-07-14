@@ -143,7 +143,7 @@ fn print_progress(summary: &EnrichmentSummary, total: usize) {
         return;
     }
 
-    if summary.attempted == total || summary.attempted % 25 == 0 {
+    if summary.attempted == total || summary.attempted.is_multiple_of(25) {
         println!(
             "[{}/{}] fetched {}, committed {}, failed {}",
             summary.attempted, total, summary.fetched, summary.updated, summary.failed

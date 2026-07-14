@@ -289,10 +289,10 @@ fn merge_fuzzy_results(
 }
 
 fn python_command() -> String {
-    if let Ok(value) = env::var(ENV_PYTHON) {
-        if !value.trim().is_empty() {
-            return value;
-        }
+    if let Ok(value) = env::var(ENV_PYTHON)
+        && !value.trim().is_empty()
+    {
+        return value;
     }
     if Path::new(LOCAL_PYTHON).exists() {
         LOCAL_PYTHON.to_string()

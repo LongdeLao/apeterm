@@ -445,10 +445,10 @@ impl App {
             .iter()
             .map(|symbol| {
                 let mut terms = vec![symbol.clone()];
-                if let Some(alias) = self.watchlist_display_name(symbol) {
-                    if !alias.trim().is_empty() {
-                        terms.push(alias.trim().to_string());
-                    }
+                if let Some(alias) = self.watchlist_display_name(symbol)
+                    && !alias.trim().is_empty()
+                {
+                    terms.push(alias.trim().to_string());
                 }
                 if let Some((_, Some(name))) = instrument_names
                     .iter()
@@ -495,7 +495,7 @@ impl App {
 }
 
 fn name_match_terms(name: &str) -> Vec<String> {
-    let cleaned_text = name.replace(',', " ").replace('.', " ").replace('&', " ");
+    let cleaned_text = name.replace([',', '.', '&'], " ");
     let cleaned = cleaned_text
         .split_whitespace()
         .filter(|token| {

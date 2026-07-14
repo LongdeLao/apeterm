@@ -132,7 +132,7 @@ fn run_app(
         app.poll_backend_insight();
         app.poll_agent_response();
 
-        terminal.draw(|frame| ui::render(frame, &app))?;
+        terminal.draw(|frame| ui::render(frame, app))?;
 
         if crossterm_event::poll(Duration::from_millis(100))? {
             let event = crossterm_event::read()?;

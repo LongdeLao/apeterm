@@ -79,10 +79,10 @@ fn stream_binance_prices(
             continue;
         };
 
-        if let Some(event) = parse_ticker_message(&text) {
-            if sender.send(event).is_err() {
-                break;
-            }
+        if let Some(event) = parse_ticker_message(&text)
+            && sender.send(event).is_err()
+        {
+            break;
         }
     }
 
@@ -162,10 +162,10 @@ fn stream_yfinance_prices(sender: &Sender<MarketEvent>, symbols: &[String]) -> s
     let reader = BufReader::new(stdout);
     for line in reader.lines() {
         let line = line?;
-        if let Some(event) = parse_stock_message(&line) {
-            if sender.send(event).is_err() {
-                break;
-            }
+        if let Some(event) = parse_stock_message(&line)
+            && sender.send(event).is_err()
+        {
+            break;
         }
     }
 
@@ -175,10 +175,10 @@ fn stream_yfinance_prices(sender: &Sender<MarketEvent>, symbols: &[String]) -> s
 }
 
 fn python_command() -> String {
-    if let Ok(value) = env::var(ENV_PYTHON) {
-        if !value.trim().is_empty() {
-            return value;
-        }
+    if let Ok(value) = env::var(ENV_PYTHON)
+        && !value.trim().is_empty()
+    {
+        return value;
     }
     if Path::new(LOCAL_PYTHON).exists() {
         LOCAL_PYTHON.to_string()

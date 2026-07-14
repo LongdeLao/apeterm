@@ -40,6 +40,7 @@ pub struct AppConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct OnboardingConfig {
     #[serde(default)]
     pub completed: bool,
@@ -236,9 +237,10 @@ impl AppConfig {
     }
 
     pub fn default() -> io::Result<Self> {
-        let mut config = <Self as Default>::default();
-        config.ticker_db_path = data_dir()?.join("instruments.sqlite3");
-        Ok(config)
+        Ok(Self {
+            ticker_db_path: data_dir()?.join("instruments.sqlite3"),
+            ..Default::default()
+        })
     }
 
     pub fn save(&self) -> io::Result<()> {
@@ -266,12 +268,6 @@ impl Default for AppConfig {
             sec: SecConfig::default(),
             update: UpdateConfig::default(),
         }
-    }
-}
-
-impl Default for OnboardingConfig {
-    fn default() -> Self {
-        Self { completed: false }
     }
 }
 

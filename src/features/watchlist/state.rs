@@ -80,14 +80,14 @@ impl App {
         });
     }
     pub fn close_watchlist_editor(&mut self) {
-        if let Some(editor) = &mut self.watchlist.editor {
-            if editor.mode.is_some() {
-                editor.mode = None;
-                self.watchlist.suggestions.clear();
-                self.watchlist.suggestion_selection = 0;
-                self.clear_text_input_mode();
-                return;
-            }
+        if let Some(editor) = &mut self.watchlist.editor
+            && editor.mode.is_some()
+        {
+            editor.mode = None;
+            self.watchlist.suggestions.clear();
+            self.watchlist.suggestion_selection = 0;
+            self.clear_text_input_mode();
+            return;
         }
 
         self.watchlist.editor = None;
