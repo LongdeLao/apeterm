@@ -7,7 +7,7 @@
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 
 use crate::app::{
-    App, AppMode, InputTarget, MoveDirection, Page, PanelId, SelectionDirection, SplitDirection,
+    App, AppMode, InputTarget, MoveDirection, Page, SelectionDirection, SplitDirection,
     WatchlistKind, WindowKind,
 };
 
@@ -119,18 +119,23 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
                 app.activate_watchlist_editor();
             } else if app.page == Page::Onboarding {
                 app.advance_onboarding();
-            } else if app.page == Page::Dashboard && app.dashboard.focused_panel == PanelId::News {
-                app.open_selected_news();
-            } else if app.page == Page::Dashboard
-                && app.panel_content(app.dashboard.focused_panel) == WindowKind::Notes
-            {
-                app.enter_note_insert_mode();
             } else if app.page == Page::Dashboard {
-                app.confirm_window_picker();
+                match app.panel_content(app.dashboard.focused_panel) {
+                    WindowKind::News => app.open_selected_news(),
+                    WindowKind::Notes => app.enter_note_insert_mode(),
+                    WindowKind::Screener => app.open_screener_selection(),
+                    WindowKind::Compare => app.open_compare_selection(),
+                    WindowKind::Picker => app.confirm_window_picker(),
+                    _ => {}
+                }
             } else if app.page == Page::Search {
                 app.open_selected_details();
             } else if app.page == Page::Settings {
                 app.activate_settings_item();
+            } else if app.page == Page::Screener {
+                app.open_screener_selection();
+            } else if app.page == Page::Compare {
+                app.open_compare_selection();
             }
         }
         _ => match app.page {
@@ -139,6 +144,21 @@ fn handle_key_event(app: &mut App, key_code: KeyCode, modifiers: KeyModifiers) {
             Page::Search => handle_search_key(app, key_code),
             Page::Details => handle_details_key(app, key_code),
             Page::Settings => handle_settings_key(app, key_code),
+            Page::Portfolio => {
+                handle_portfolio_key(app, key_code);
+            }
+            Page::Alerts => {
+                handle_alerts_key(app, key_code);
+            }
+            Page::Screener => {
+                handle_screener_key(app, key_code);
+            }
+            Page::Compare => {
+                handle_compare_key(app, key_code);
+            }
+            Page::Calendar => {
+                handle_calendar_key(app, key_code);
+            }
         },
     }
 }
@@ -209,18 +229,22 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         return;
     }
 
-    if app.dashboard.focused_panel == PanelId::News && handle_news_key(app, key_code) {
-        return;
-    }
-
-    if app.dashboard.focused_panel == PanelId::Watchlist
-        && handle_watchlist_panel_key(app, key_code)
-    {
-        return;
-    }
-
-    if handle_notes_key(app, key_code) {
-        return;
+    if !is_control {
+        let handled = match app.panel_content(app.dashboard.focused_panel) {
+            WindowKind::News => handle_news_key(app, key_code),
+            WindowKind::Watchlist => handle_watchlist_panel_key(app, key_code),
+            WindowKind::Notes => handle_notes_key(app, key_code),
+            WindowKind::Sec => handle_sec_key(app, key_code),
+            WindowKind::Portfolio => handle_portfolio_key(app, key_code),
+            WindowKind::Alerts => handle_alerts_key(app, key_code),
+            WindowKind::Screener => handle_screener_key(app, key_code),
+            WindowKind::Compare => handle_compare_key(app, key_code),
+            WindowKind::Calendar => handle_calendar_key(app, key_code),
+            WindowKind::Picker => false,
+        };
+        if handled {
+            return;
+        }
     }
 
     match (key_code, is_control) {
@@ -233,10 +257,6 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
             return;
         }
         _ => {}
-    }
-
-    if handle_sec_key(app, key_code) {
-        return;
     }
 
     match (key_code, is_control) {
@@ -261,7 +281,9 @@ fn handle_dashboard_key(app: &mut App, key_code: KeyCode, modifiers: KeyModifier
         (KeyCode::Char('s'), true) => app.begin_split_command(),
         (KeyCode::Char('a'), true) => app.add_panel(),
         (KeyCode::Char('c'), true) => app.change_focused_panel_content(),
-        (KeyCode::Char('e'), false) if app.dashboard.focused_panel == PanelId::Watchlist => {
+        (KeyCode::Char('e'), false)
+            if app.panel_content(app.dashboard.focused_panel) == WindowKind::Watchlist =>
+        {
             app.open_watchlist_editor()
         }
         (KeyCode::Char('x'), true) => app.close_focused_panel(),
@@ -359,11 +381,6 @@ fn handle_notes_key(app: &mut App, key_code: KeyCode) -> bool {
 }
 
 fn handle_sec_key(app: &mut App, key_code: KeyCode) -> bool {
-    if app.dashboard.focused_panel != PanelId::Notes
-        && app.dashboard.focused_panel != PanelId::Calendar
-    {
-        return false;
-    }
     if app.panel_content(app.dashboard.focused_panel) != crate::app::WindowKind::Sec {
         return false;
     }
@@ -495,6 +512,7 @@ fn handle_details_key(app: &mut App, key_code: KeyCode) {
         }
         KeyCode::Char('e') => app.toggle_detail_description(),
         KeyCode::Char('x') => app.toggle_detail_context(),
+        KeyCode::Char('A') => app.create_quick_alert(),
         _ => {}
     }
 }
@@ -511,6 +529,69 @@ fn handle_settings_key(app: &mut App, key_code: KeyCode) {
         KeyCode::Down | KeyCode::Char('j') => app.move_settings_selection(SelectionDirection::Next),
         _ => {}
     }
+}
+
+fn handle_portfolio_key(app: &mut App, key_code: KeyCode) -> bool {
+    match key_code {
+        KeyCode::Char('r') => app.refresh_portfolio(),
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.move_portfolio_selection(SelectionDirection::Previous)
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.move_portfolio_selection(SelectionDirection::Next)
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn handle_alerts_key(app: &mut App, key_code: KeyCode) -> bool {
+    match key_code {
+        KeyCode::Char('n') => app.create_quick_alert(),
+        KeyCode::Char('t') => app.toggle_selected_alert(),
+        KeyCode::Char('d') => app.delete_selected_alert(),
+        KeyCode::Up | KeyCode::Char('k') => app.move_alert_selection(SelectionDirection::Previous),
+        KeyCode::Down | KeyCode::Char('j') => app.move_alert_selection(SelectionDirection::Next),
+        _ => return false,
+    }
+    true
+}
+
+fn handle_screener_key(app: &mut App, key_code: KeyCode) -> bool {
+    match key_code {
+        KeyCode::Left => app.cycle_screener_preset(SelectionDirection::Previous),
+        KeyCode::Right => app.cycle_screener_preset(SelectionDirection::Next),
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.move_screener_selection(SelectionDirection::Previous)
+        }
+        KeyCode::Down | KeyCode::Char('j') => app.move_screener_selection(SelectionDirection::Next),
+        _ => return false,
+    }
+    true
+}
+
+fn handle_compare_key(app: &mut App, key_code: KeyCode) -> bool {
+    match key_code {
+        KeyCode::Char('d') => app.remove_compare_symbol(),
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.move_compare_selection(SelectionDirection::Previous)
+        }
+        KeyCode::Down | KeyCode::Char('j') => app.move_compare_selection(SelectionDirection::Next),
+        _ => return false,
+    }
+    true
+}
+
+fn handle_calendar_key(app: &mut App, key_code: KeyCode) -> bool {
+    match key_code {
+        KeyCode::Char('f') => app.toggle_calendar_scope(),
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.move_calendar_selection(SelectionDirection::Previous)
+        }
+        KeyCode::Down | KeyCode::Char('j') => app.move_calendar_selection(SelectionDirection::Next),
+        _ => return false,
+    }
+    true
 }
 
 fn handle_watchlist_edit_key(app: &mut App, key_code: KeyCode) {
@@ -565,6 +646,7 @@ fn handle_watchlist_panel_key(app: &mut App, key_code: KeyCode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::PanelId;
     use crate::config::AppConfig;
     use crossterm::event::KeyModifiers;
 
@@ -666,5 +748,27 @@ mod tests {
 
         assert_eq!(app.page, Page::Dashboard);
         assert!(!app.dashboard.pending_split);
+    }
+
+    #[test]
+    fn enter_is_routed_by_panel_content_not_panel_position() {
+        let mut app = test_app();
+        app.dashboard.focused_panel = PanelId::News;
+        app.set_panel_content(PanelId::News, WindowKind::Notes);
+
+        press(&mut app, KeyCode::Enter);
+
+        assert!(app.is_text_input_target(InputTarget::Notes));
+    }
+
+    #[test]
+    fn control_navigation_is_not_swallowed_by_panel_content() {
+        let mut app = test_app();
+        app.set_panel_content(PanelId::News, WindowKind::Portfolio);
+        let before = app.dashboard.layout.top_height_percent;
+
+        handle_key_event(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
+
+        assert_eq!(app.dashboard.layout.top_height_percent, before + 5);
     }
 }

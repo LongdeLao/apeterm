@@ -58,10 +58,15 @@ pub enum SpotlightPanel {
     Search,
     Settings,
     AgentPanel,
+    Portfolio,
+    Alerts,
+    Screener,
+    Compare,
+    Calendar,
 }
 
 impl SpotlightPanel {
-    pub const ALL: [SpotlightPanel; 8] = [
+    pub const ALL: [SpotlightPanel; 13] = [
         SpotlightPanel::Watchlist,
         SpotlightPanel::News,
         SpotlightPanel::Congress,
@@ -70,6 +75,11 @@ impl SpotlightPanel {
         SpotlightPanel::Search,
         SpotlightPanel::Settings,
         SpotlightPanel::AgentPanel,
+        SpotlightPanel::Portfolio,
+        SpotlightPanel::Alerts,
+        SpotlightPanel::Screener,
+        SpotlightPanel::Compare,
+        SpotlightPanel::Calendar,
     ];
 
     pub fn label(&self) -> &'static str {
@@ -82,6 +92,11 @@ impl SpotlightPanel {
             SpotlightPanel::Search => "Search",
             SpotlightPanel::Settings => "Settings",
             SpotlightPanel::AgentPanel => "AI Agent",
+            SpotlightPanel::Portfolio => "Portfolio",
+            SpotlightPanel::Alerts => "Alerts & Activity",
+            SpotlightPanel::Screener => "Stock Screener",
+            SpotlightPanel::Compare => "Compare Symbols",
+            SpotlightPanel::Calendar => "Market Calendar",
         }
     }
 
@@ -95,6 +110,11 @@ impl SpotlightPanel {
             SpotlightPanel::Search => "search find symbol",
             SpotlightPanel::Settings => "settings preferences theme locale",
             SpotlightPanel::AgentPanel => "agent ai assistant chat",
+            SpotlightPanel::Portfolio => "portfolio positions holdings broker trade republic pnl",
+            SpotlightPanel::Alerts => "alerts notifications activity price volume filing news",
+            SpotlightPanel::Screener => "screener filter movers unusual volume gainers losers",
+            SpotlightPanel::Compare => "compare correlation relative performance symbols",
+            SpotlightPanel::Calendar => "calendar earnings dividends macro events",
         }
     }
 
@@ -116,6 +136,11 @@ impl SpotlightPanel {
             SpotlightPanel::Search => app.open_search(),
             SpotlightPanel::Settings => app.open_settings(),
             SpotlightPanel::AgentPanel => app.open_agent(),
+            SpotlightPanel::Portfolio => app.open_portfolio(),
+            SpotlightPanel::Alerts => app.open_alerts(),
+            SpotlightPanel::Screener => app.open_screener(),
+            SpotlightPanel::Compare => app.open_compare(),
+            SpotlightPanel::Calendar => app.open_calendar(),
         }
     }
 }
@@ -155,6 +180,31 @@ pub fn actions() -> Vec<SpotlightAction> {
             label: "Toggle Language",
             keywords: "locale language german english de en",
             run: |app| app.toggle_locale(),
+        },
+        SpotlightAction {
+            label: "Sync Trade Republic Portfolio",
+            keywords: "broker pytr refresh holdings",
+            run: |app| app.refresh_portfolio(),
+        },
+        SpotlightAction {
+            label: "Workspace: Research",
+            keywords: "layout preset news notes sec",
+            run: |app| app.apply_workspace_preset("research"),
+        },
+        SpotlightAction {
+            label: "Workspace: Trading",
+            keywords: "layout preset portfolio alerts screener",
+            run: |app| app.apply_workspace_preset("trading"),
+        },
+        SpotlightAction {
+            label: "Workspace: Filings",
+            keywords: "layout preset sec congress news",
+            run: |app| app.apply_workspace_preset("filings"),
+        },
+        SpotlightAction {
+            label: "Workspace: Compact",
+            keywords: "layout preset small narrow terminal",
+            run: |app| app.apply_workspace_preset("compact"),
         },
     ]
 }

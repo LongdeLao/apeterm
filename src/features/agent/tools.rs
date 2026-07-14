@@ -28,7 +28,13 @@ pub fn catalog() -> &'static str {
 - create_watchlist: args {"name": string} — create a new watchlist and make it active
 - add_symbol_to_watchlist: args {"symbol": string} — add a ticker to the active watchlist
 - remove_symbol_from_watchlist: args {"symbol": string} — remove a ticker from the active watchlist
-- open_symbol: args {"symbol": string} — open the details page for a ticker"#
+- open_symbol: args {"symbol": string} — open the details page for a ticker
+- open_portfolio: args {} — open the connected broker portfolio
+- sync_portfolio: args {} — start a read-only broker portfolio sync
+- list_alerts: args {} — list configured alerts and their state
+- create_price_alert: args {"symbol": string, "direction": "above"|"below"|"volume", "threshold": number} — create a price or relative-volume alert
+- open_screener: args {} — open the live watchlist screener
+- open_comparison: args {"symbols": string[]} — open the comparison workspace for 2 to 5 symbols"#
 }
 
 pub fn execute(app: &mut App, call: ToolCall) -> ToolResult {
@@ -56,6 +62,55 @@ pub fn execute(app: &mut App, call: ToolCall) -> ToolResult {
             app.agent_remove_symbol_from_watchlist(&symbol)
         }
         ToolCall::OpenSymbol { symbol } => app.agent_open_symbol(&symbol),
+        ToolCall::OpenPortfolio => {
+            app.open_portfolio();
+            Ok(app.portfolio_summary())
+        }
+        ToolCall::SyncPortfolio => {
+            app.refresh_portfolio();
+            Ok("portfolio sync started".to_string())
+        }
+        ToolCall::ListAlerts => Ok(if app.alerts.rules.is_empty() {
+            "No alerts configured".to_string()
+        } else {
+            app.alerts
+                .rules
+                .iter()
+                .map(|rule| {
+                    format!(
+                        "{} {:?} {:.2} · {}",
+                        rule.symbol,
+                        rule.direction,
+                        rule.threshold,
+                        if rule.enabled { "enabled" } else { "disabled" }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }),
+        ToolCall::CreatePriceAlert {
+            symbol,
+            direction,
+            threshold,
+        } => {
+            let direction = match direction.as_str() {
+                "above" => crate::features::alerts::state::AlertDirection::Above,
+                "below" => crate::features::alerts::state::AlertDirection::Below,
+                "volume" => crate::features::alerts::state::AlertDirection::VolumeAbove,
+                _ => {
+                    return ToolResult::failure(
+                        tool,
+                        "direction must be `above`, `below`, or `volume`",
+                    );
+                }
+            };
+            app.create_price_alert(&symbol, direction, threshold)
+        }
+        ToolCall::OpenScreener => {
+            app.open_screener();
+            Ok("screener opened".to_string())
+        }
+        ToolCall::OpenComparison { symbols } => app.set_compare_symbols(&symbols),
     };
 
     match outcome {

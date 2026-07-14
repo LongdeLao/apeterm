@@ -67,6 +67,7 @@ fn spawn_binance_stream(sender: Sender<MarketEvent>, symbols: Vec<String>) {
     });
 }
 
+#[allow(clippy::result_large_err)]
 fn stream_binance_prices(
     sender: &Sender<MarketEvent>,
     stream_url: &str,

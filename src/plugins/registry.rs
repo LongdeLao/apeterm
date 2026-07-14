@@ -56,6 +56,41 @@ pub fn registered_plugins() -> &'static [PluginSpec] {
             experimental: true,
             modules: &["features/agent/"],
         },
+        PluginSpec {
+            id: PluginId::Portfolio,
+            name: "Portfolio",
+            description: "Read-only broker holdings, cash, value, and P/L.",
+            experimental: true,
+            modules: &["features/portfolio/"],
+        },
+        PluginSpec {
+            id: PluginId::Alerts,
+            name: "Alerts",
+            description: "Price alerts and a local activity inbox.",
+            experimental: true,
+            modules: &["features/alerts/"],
+        },
+        PluginSpec {
+            id: PluginId::Screener,
+            name: "Screener",
+            description: "Live screens over watchlist price and volume signals.",
+            experimental: true,
+            modules: &["features/screener/"],
+        },
+        PluginSpec {
+            id: PluginId::Compare,
+            name: "Compare",
+            description: "Side-by-side market comparison workspace.",
+            experimental: true,
+            modules: &["features/compare/"],
+        },
+        PluginSpec {
+            id: PluginId::Broker,
+            name: "Broker",
+            description: "Optional read-only broker adapters.",
+            experimental: true,
+            modules: &["broker/"],
+        },
     ]
 }
 

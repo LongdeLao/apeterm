@@ -202,6 +202,19 @@ fn settings_row(app: &App, item: SettingsItem) -> (SettingsItem, String, String,
             true,
             false,
         ),
+        SettingsItem::TradeRepublic => (
+            item,
+            "Trade Republic portfolio".to_string(),
+            if app.portfolio.snapshot.is_some() {
+                "Connected · Enter to open".to_string()
+            } else if app.portfolio.syncing {
+                "Syncing…".to_string()
+            } else {
+                "Optional · apeterm broker connect".to_string()
+            },
+            false,
+            app.portfolio.snapshot.is_some(),
+        ),
         SettingsItem::Reset => (
             item,
             app.t(Key::SettingsSectionDanger).to_string(),

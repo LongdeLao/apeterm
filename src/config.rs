@@ -36,6 +36,29 @@ pub struct AppConfig {
     pub sec: SecConfig,
     #[serde(default)]
     pub update: UpdateConfig,
+    #[serde(default)]
+    pub broker: BrokerConfig,
+    #[serde(default)]
+    pub workspace: WorkspaceConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BrokerConfig {
+    /// Broker support is opt-in; ApeTerm never asks for or stores broker credentials.
+    pub trade_republic_enabled: bool,
+    #[serde(default = "default_portfolio_cache_path")]
+    pub portfolio_cache_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorkspaceConfig {
+    pub preset: String,
+    pub top_left_width_percent: u16,
+    pub bottom_left_width_percent: u16,
+    pub top_height_percent: u16,
+    pub panels: [String; 4],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,6 +290,34 @@ impl Default for AppConfig {
             news: NewsConfig::default(),
             sec: SecConfig::default(),
             update: UpdateConfig::default(),
+            broker: BrokerConfig::default(),
+            workspace: WorkspaceConfig::default(),
+        }
+    }
+}
+
+impl Default for BrokerConfig {
+    fn default() -> Self {
+        Self {
+            trade_republic_enabled: false,
+            portfolio_cache_path: default_portfolio_cache_path(),
+        }
+    }
+}
+
+impl Default for WorkspaceConfig {
+    fn default() -> Self {
+        Self {
+            preset: "research".to_string(),
+            top_left_width_percent: 50,
+            bottom_left_width_percent: 50,
+            top_height_percent: 50,
+            panels: [
+                "news".to_string(),
+                "watchlist".to_string(),
+                "sec".to_string(),
+                "notes".to_string(),
+            ],
         }
     }
 }
@@ -410,6 +461,12 @@ pub fn config_path() -> io::Result<PathBuf> {
     let dir = dirs.config_dir();
     fs::create_dir_all(dir)?;
     Ok(dir.join("config.json"))
+}
+
+fn default_portfolio_cache_path() -> PathBuf {
+    data_dir()
+        .map(|dir| dir.join("portfolio.json"))
+        .unwrap_or_else(|_| PathBuf::from("portfolio.json"))
 }
 
 fn project_dirs() -> io::Result<ProjectDirs> {

@@ -1,5 +1,4 @@
 use crate::app::*;
-use crate::i18n::Key;
 
 /// Layout + panel state owned by the dashboard.
 #[derive(Debug)]
@@ -220,6 +219,82 @@ impl App {
     pub(crate) fn set_panel_content(&mut self, panel_id: PanelId, window_kind: WindowKind) {
         self.dashboard.panel_contents.set(panel_id, window_kind);
     }
+
+    pub fn restore_workspace(&mut self) {
+        let workspace = self.config.workspace.clone();
+        self.dashboard.layout = DashboardLayout {
+            top_left_width_percent: workspace.top_left_width_percent.clamp(15, 85),
+            bottom_left_width_percent: workspace.bottom_left_width_percent.clamp(15, 85),
+            top_height_percent: workspace.top_height_percent.clamp(15, 85),
+        };
+        for (panel, name) in PanelId::ALL.into_iter().zip(workspace.panels.iter()) {
+            if let Some(kind) = WindowKind::from_config_name(name) {
+                self.dashboard.panel_contents.set(panel, kind);
+            }
+        }
+    }
+
+    pub fn save_workspace(&mut self) {
+        self.config.workspace.top_left_width_percent = self.dashboard.layout.top_left_width_percent;
+        self.config.workspace.bottom_left_width_percent =
+            self.dashboard.layout.bottom_left_width_percent;
+        self.config.workspace.top_height_percent = self.dashboard.layout.top_height_percent;
+        self.config.workspace.panels =
+            PanelId::ALL.map(|panel| self.panel_content(panel).config_name().to_string());
+        let _ = self.config.save();
+    }
+
+    pub fn apply_workspace_preset(&mut self, preset: &str) {
+        let (layout, panels) = match preset {
+            "trading" => (
+                DashboardLayout {
+                    top_left_width_percent: 65,
+                    bottom_left_width_percent: 50,
+                    top_height_percent: 60,
+                },
+                [
+                    WindowKind::Watchlist,
+                    WindowKind::Screener,
+                    WindowKind::Portfolio,
+                    WindowKind::Alerts,
+                ],
+            ),
+            "filings" => (
+                DashboardLayout::default(),
+                [
+                    WindowKind::Sec,
+                    WindowKind::News,
+                    WindowKind::Calendar,
+                    WindowKind::Notes,
+                ],
+            ),
+            "compact" => (
+                DashboardLayout::default(),
+                [
+                    WindowKind::Watchlist,
+                    WindowKind::Alerts,
+                    WindowKind::Portfolio,
+                    WindowKind::Compare,
+                ],
+            ),
+            _ => (
+                DashboardLayout::default(),
+                [
+                    WindowKind::News,
+                    WindowKind::Watchlist,
+                    WindowKind::Sec,
+                    WindowKind::Notes,
+                ],
+            ),
+        };
+        self.dashboard.layout = layout;
+        self.dashboard.closed_panels.clear();
+        for (panel, kind) in PanelId::ALL.into_iter().zip(panels) {
+            self.dashboard.panel_contents.set(panel, kind);
+        }
+        self.config.workspace.preset = preset.to_string();
+        self.notify(format!("Workspace preset: {preset}"));
+    }
 }
 
 impl PanelId {
@@ -227,23 +302,60 @@ impl PanelId {
 }
 
 impl WindowKind {
-    pub const CHOICES: [Self; 5] = [
+    pub const CHOICES: [Self; 9] = [
         Self::News,
         Self::Watchlist,
         Self::Calendar,
         Self::Notes,
         Self::Sec,
+        Self::Portfolio,
+        Self::Alerts,
+        Self::Screener,
+        Self::Compare,
     ];
 
-    pub fn label_key(self) -> Key {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::News => Key::PanelTitleNews,
-            Self::Watchlist => Key::PanelTitleWatchlist,
-            Self::Calendar => Key::PanelTitleCalendar,
-            Self::Notes => Key::PanelTitleNotes,
-            Self::Sec => Key::PanelTitleSec,
-            Self::Picker => Key::PanelTitlePicker,
+            Self::News => "News",
+            Self::Watchlist => "Watchlist",
+            Self::Calendar => "Calendar",
+            Self::Notes => "Notes",
+            Self::Sec => "SEC",
+            Self::Portfolio => "Portfolio",
+            Self::Alerts => "Alerts",
+            Self::Screener => "Screener",
+            Self::Compare => "Compare",
+            Self::Picker => "Choose window",
         }
+    }
+
+    fn config_name(self) -> &'static str {
+        match self {
+            Self::News => "news",
+            Self::Watchlist => "watchlist",
+            Self::Calendar => "calendar",
+            Self::Notes => "notes",
+            Self::Sec => "sec",
+            Self::Portfolio => "portfolio",
+            Self::Alerts => "alerts",
+            Self::Screener => "screener",
+            Self::Compare => "compare",
+            Self::Picker => "picker",
+        }
+    }
+    fn from_config_name(value: &str) -> Option<Self> {
+        Some(match value {
+            "news" => Self::News,
+            "watchlist" => Self::Watchlist,
+            "calendar" => Self::Calendar,
+            "notes" => Self::Notes,
+            "sec" => Self::Sec,
+            "portfolio" => Self::Portfolio,
+            "alerts" => Self::Alerts,
+            "screener" => Self::Screener,
+            "compare" => Self::Compare,
+            _ => return None,
+        })
     }
 }
 

@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::{
     app::{App, PanelId, WindowKind},
-    features::{calendar, news, notes, sec, watchlist},
+    features::{alerts, calendar, compare, news, notes, portfolio, screener, sec, watchlist},
     i18n::Key,
     theme::current_theme,
     ui,
@@ -25,6 +25,13 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     let geometry = dashboard_geometry(area, app);
 
+    // Narrow terminals become a focused single-pane workspace instead of
+    // squeezing four unreadable panels into the grid.
+    if area.width < 72 || area.height < 16 {
+        render_panel(frame, app, area, app.dashboard.focused_panel);
+        return;
+    }
+
     render_panel(frame, app, geometry.news, PanelId::News);
     render_panel(frame, app, geometry.watchlist, PanelId::Watchlist);
     render_panel(frame, app, geometry.calendar, PanelId::Calendar);
@@ -39,6 +46,10 @@ fn render_panel(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
         WindowKind::Calendar => calendar::render(frame, app, area, panel_id),
         WindowKind::Notes => notes::render(frame, app, area, panel_id),
         WindowKind::Sec => sec::render(frame, app, area, panel_id),
+        WindowKind::Portfolio => portfolio::render_panel(frame, app, area, panel_id),
+        WindowKind::Alerts => alerts::render_panel(frame, app, area, panel_id),
+        WindowKind::Screener => screener::render_panel(frame, app, area, panel_id),
+        WindowKind::Compare => compare::render_panel(frame, app, area, panel_id),
         WindowKind::Picker => render_picker(frame, app, area, panel_id),
     }
 }
@@ -69,7 +80,7 @@ fn render_picker(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
 
         lines.push(Line::from(vec![
             Span::styled(format!("{marker} "), style),
-            Span::styled(app.t(window_kind.label_key()), style),
+            Span::styled(window_kind.label(), style),
         ]));
     }
 

@@ -14,11 +14,13 @@ DEFAULT_BIN_DIR="$PREFIX/bin"
 BIN_DIR="${BIN_DIR:-}"
 SHARE_DIR="${SHARE_DIR:-$PREFIX/share/$APP_NAME}"
 SCRIPT_DIR="$SHARE_DIR/scripts"
+BROKER_DIR="$SHARE_DIR/broker"
 VERSION="${VERSION:-latest}"
 GITHUB_REPO="${GITHUB_REPO:-LongdeLao/apeterm}"
 REPO_REF="${REPO_REF:-master}"
 BUILD_FROM_SOURCE="${BUILD_FROM_SOURCE:-0}"
 INSTALL_PYTHON_DEPS="${INSTALL_PYTHON_DEPS:-1}"
+INSTALL_BROKER_DEPS="${INSTALL_BROKER_DEPS:-0}"
 PYTHON_BIN="${PYTHON_BIN:-}"
 REAL_BIN="$SHARE_DIR/$APP_NAME-bin"
 PATH_UPDATED=0
@@ -189,21 +191,28 @@ install_python_deps() {
   "$PYTHON_BIN" -m venv "$SHARE_DIR/.venv"
   "$SHARE_DIR/.venv/bin/pip" install --upgrade pip >/dev/null
   "$SHARE_DIR/.venv/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" >/dev/null
+  if [[ "$INSTALL_BROKER_DEPS" == "1" ]]; then
+    "$SHARE_DIR/.venv/bin/pip" install -r "$BROKER_DIR/requirements.txt" >/dev/null
+  fi
 }
 
 install_support_files() {
-  mkdir -p "$SCRIPT_DIR"
+  mkdir -p "$SCRIPT_DIR" "$BROKER_DIR"
   if [[ -n "$ROOT_DIR" ]]; then
     install -m 0644 "$ROOT_DIR/scripts/yfinance_stream.py" "$SCRIPT_DIR/yfinance_stream.py"
     install -m 0644 "$ROOT_DIR/scripts/yfinance_details.py" "$SCRIPT_DIR/yfinance_details.py"
     install -m 0644 "$ROOT_DIR/scripts/house_ptr_extract.py" "$SCRIPT_DIR/house_ptr_extract.py"
     install -m 0644 "$ROOT_DIR/scripts/requirements.txt" "$SCRIPT_DIR/requirements.txt"
+    install -m 0644 "$ROOT_DIR/broker/trade_republic.py" "$BROKER_DIR/trade_republic.py"
+    install -m 0644 "$ROOT_DIR/broker/requirements.txt" "$BROKER_DIR/requirements.txt"
   else
     need_cmd curl
     curl -fsSL "$(raw_url scripts/yfinance_stream.py)" -o "$SCRIPT_DIR/yfinance_stream.py"
     curl -fsSL "$(raw_url scripts/yfinance_details.py)" -o "$SCRIPT_DIR/yfinance_details.py"
     curl -fsSL "$(raw_url scripts/house_ptr_extract.py)" -o "$SCRIPT_DIR/house_ptr_extract.py"
     curl -fsSL "$(raw_url scripts/requirements.txt)" -o "$SCRIPT_DIR/requirements.txt"
+    curl -fsSL "$(raw_url broker/trade_republic.py)" -o "$BROKER_DIR/trade_republic.py"
+    curl -fsSL "$(raw_url broker/requirements.txt)" -o "$BROKER_DIR/requirements.txt"
   fi
 }
 
@@ -213,6 +222,7 @@ install_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 export APETERM_SCRIPT_DIR="$SCRIPT_DIR"
+export APETERM_BROKER_DIR="$BROKER_DIR"
 if [[ -x "$SHARE_DIR/.venv/bin/python" ]]; then
   export APETERM_PYTHON="$SHARE_DIR/.venv/bin/python"
 fi

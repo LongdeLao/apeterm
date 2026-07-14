@@ -27,6 +27,11 @@ pub enum Page {
     Search,
     Details,
     Settings,
+    Portfolio,
+    Alerts,
+    Screener,
+    Compare,
+    Calendar,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +88,10 @@ pub enum WindowKind {
     Calendar,
     Notes,
     Sec,
+    Portfolio,
+    Alerts,
+    Screener,
+    Compare,
     Picker,
 }
 
@@ -202,6 +211,7 @@ pub enum SettingsItem {
     Language,
     Theme,
     Onboarding,
+    TradeRepublic,
     Reset,
 }
 
@@ -269,6 +279,7 @@ pub(crate) enum SecEvent {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum BackendInsightEvent {
     Loaded {
         symbol: String,
@@ -316,6 +327,12 @@ pub struct App {
     pub sec: crate::features::sec::SecFeature,
     pub agent: AgentController,
     pub spotlight: crate::features::spotlight::SpotlightState,
+    pub portfolio: crate::features::portfolio::PortfolioFeature,
+    pub alerts: crate::features::alerts::AlertsFeature,
+    pub screener: crate::features::screener::ScreenerFeature,
+    pub compare: crate::features::compare::CompareFeature,
+    pub calendar: crate::features::calendar::CalendarFeature,
+    pub notification: Option<(String, std::time::Instant)>,
     pub(crate) config: AppConfig,
 }
 
@@ -331,7 +348,7 @@ impl App {
         let preferences = config.preferences;
         let locale = preferences.language.locale();
         let onboarding_complete = config.onboarding.completed;
-        Self {
+        let mut app = Self {
             should_quit: false,
             mode: AppMode::Normal,
             page: if onboarding_complete {
@@ -357,8 +374,18 @@ impl App {
             sec: Default::default(),
             agent: AgentController::new(&config.llm),
             spotlight: crate::features::spotlight::SpotlightState::default(),
+            portfolio: crate::features::portfolio::PortfolioFeature::load(
+                &config.broker.portfolio_cache_path,
+            ),
+            alerts: crate::features::alerts::AlertsFeature::load(),
+            screener: Default::default(),
+            compare: Default::default(),
+            calendar: Default::default(),
+            notification: None,
             config,
-        }
+        };
+        app.restore_workspace();
+        app
     }
     pub fn t(&self, key: Key) -> &str {
         self.i18n.t_with_tone(key, self.preferences.tone)
@@ -404,12 +431,25 @@ impl App {
         }
     }
     pub fn handle_market_event(&mut self, event: MarketEvent) {
+        self.evaluate_market_alerts(&event);
         update_market_quotes(
             &mut self.watchlist.crypto_quotes,
             &mut self.watchlist.stock_quotes,
             &mut self.watchlist.stock_market_session,
             event,
         );
+    }
+    pub fn notify(&mut self, message: impl Into<String>) {
+        self.notification = Some((message.into(), std::time::Instant::now()));
+    }
+    pub fn poll_notification(&mut self) {
+        if self
+            .notification
+            .as_ref()
+            .is_some_and(|(_, at)| at.elapsed() > std::time::Duration::from_secs(5))
+        {
+            self.notification = None;
+        }
     }
     pub fn take_market_refresh_request(&mut self) -> bool {
         let requested = self.watchlist.market_refresh_requested;
@@ -458,6 +498,11 @@ impl App {
             } else {
                 self.page = self.return_page.take().unwrap_or(Page::Dashboard);
             }
+        } else if matches!(
+            self.page,
+            Page::Portfolio | Page::Alerts | Page::Screener | Page::Compare | Page::Calendar
+        ) {
+            self.page = self.return_page.take().unwrap_or(Page::Dashboard);
         } else if self.is_editing_watchlist() {
             self.close_watchlist_editor();
         }

@@ -13,6 +13,11 @@ pub fn build_context(app: &App) -> String {
         Page::Search => "search",
         Page::Details => "symbol details",
         Page::Settings => "settings",
+        Page::Portfolio => "portfolio",
+        Page::Alerts => "alerts",
+        Page::Screener => "screener",
+        Page::Compare => "comparison",
+        Page::Calendar => "calendar",
     };
     let _ = writeln!(context, "page: {page}");
 
@@ -23,6 +28,10 @@ pub fn build_context(app: &App) -> String {
             WindowKind::Calendar => "calendar",
             WindowKind::Notes => "notes",
             WindowKind::Sec => "sec filings",
+            WindowKind::Portfolio => "portfolio",
+            WindowKind::Alerts => "alerts",
+            WindowKind::Screener => "screener",
+            WindowKind::Compare => "comparison",
             WindowKind::Picker => "window picker",
         };
         let _ = writeln!(context, "focused panel: {focused}");

@@ -1,3 +1,5 @@
+pub mod state;
 pub mod view;
 
-pub use view::render;
+pub use state::CalendarFeature;
+pub use view::{render, render_page};

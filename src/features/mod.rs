@@ -4,11 +4,15 @@
 //! methods. See `docs/plugins.md` for the layering model.
 
 pub mod agent;
+pub mod alerts;
 pub mod calendar;
+pub mod compare;
 pub mod dashboard;
 pub mod news;
 pub mod notes;
 pub mod onboarding;
+pub mod portfolio;
+pub mod screener;
 pub mod search;
 pub mod sec;
 pub mod settings;

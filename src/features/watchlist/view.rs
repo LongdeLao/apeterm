@@ -194,6 +194,7 @@ fn edit_action_line<'a>(app: &'a App, row: WatchlistEditRow, label: &'a str) -> 
     Line::from(Span::styled(format!("{marker} {label}"), style))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn symbol_line<'a>(
     app: &'a App,
     row: WatchlistEditRow,
@@ -263,6 +264,7 @@ fn notes_indicator(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn quote_line<'a>(
     app: &'a App,
     prefix: &str,

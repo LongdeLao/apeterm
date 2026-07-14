@@ -14,6 +14,11 @@ pub enum PluginId {
     News,
     Sec,
     Agent,
+    Portfolio,
+    Alerts,
+    Screener,
+    Compare,
+    Broker,
 }
 
 /// Static description of one internal feature module.

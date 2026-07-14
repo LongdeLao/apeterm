@@ -11,6 +11,7 @@ use crate::{
     theme::current_theme,
 };
 
+#[allow(dead_code)]
 pub fn render(
     frame: &mut Frame,
     app: &App,

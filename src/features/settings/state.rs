@@ -67,6 +67,7 @@ impl App {
             SettingsItem::Language => self.toggle_locale(),
             SettingsItem::Theme => self.set_theme(self.theme_name.next()),
             SettingsItem::Onboarding => self.toggle_onboarding_preference(),
+            SettingsItem::TradeRepublic => self.open_portfolio(),
             SettingsItem::Reset => {
                 self.settings.reset_confirmation = Some(TextInput {
                     input: String::new(),
@@ -103,6 +104,7 @@ impl App {
             }
             SettingsItem::Theme => self.set_theme(self.theme_name.move_to(direction)),
             SettingsItem::Onboarding => self.toggle_onboarding_preference(),
+            SettingsItem::TradeRepublic => {}
             SettingsItem::Reset => {}
         }
     }
@@ -139,6 +141,7 @@ impl SettingsItem {
         Self::Language,
         Self::Theme,
         Self::Onboarding,
+        Self::TradeRepublic,
         Self::Reset,
     ];
 }

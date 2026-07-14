@@ -5,26 +5,54 @@
 use serde::Deserialize;
 use serde_json::json;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ToolCall {
     ReadCurrentContext,
     SummarizeWatchlist,
     ExplainWatchlistMove,
     FindWatchlistOutliers,
-    CompareSymbols { symbols: Vec<String> },
+    CompareSymbols {
+        symbols: Vec<String>,
+    },
     BriefSelectedSymbol,
-    SummarizeSymbolNews { symbol: String },
+    SummarizeSymbolNews {
+        symbol: String,
+    },
     FindNewsWithoutPosition,
-    SummarizeNotesForSymbol { symbol: String },
-    BuildSymbolTimeline { symbol: String },
+    SummarizeNotesForSymbol {
+        symbol: String,
+    },
+    BuildSymbolTimeline {
+        symbol: String,
+    },
     SummarizeSecActivity,
     FindSecWatchlistMatches,
     SurfaceAttentionList,
     ListWatchlists,
-    CreateWatchlist { name: String },
-    AddSymbolToWatchlist { symbol: String },
-    RemoveSymbolFromWatchlist { symbol: String },
-    OpenSymbol { symbol: String },
+    CreateWatchlist {
+        name: String,
+    },
+    AddSymbolToWatchlist {
+        symbol: String,
+    },
+    RemoveSymbolFromWatchlist {
+        symbol: String,
+    },
+    OpenSymbol {
+        symbol: String,
+    },
+    OpenPortfolio,
+    SyncPortfolio,
+    ListAlerts,
+    CreatePriceAlert {
+        symbol: String,
+        direction: String,
+        threshold: f64,
+    },
+    OpenScreener,
+    OpenComparison {
+        symbols: Vec<String>,
+    },
 }
 
 impl ToolCall {
@@ -48,6 +76,12 @@ impl ToolCall {
             ToolCall::AddSymbolToWatchlist { .. } => "add_symbol_to_watchlist",
             ToolCall::RemoveSymbolFromWatchlist { .. } => "remove_symbol_from_watchlist",
             ToolCall::OpenSymbol { .. } => "open_symbol",
+            ToolCall::OpenPortfolio => "open_portfolio",
+            ToolCall::SyncPortfolio => "sync_portfolio",
+            ToolCall::ListAlerts => "list_alerts",
+            ToolCall::CreatePriceAlert { .. } => "create_price_alert",
+            ToolCall::OpenScreener => "open_screener",
+            ToolCall::OpenComparison { .. } => "open_comparison",
         }
     }
 }
@@ -209,6 +243,12 @@ fn decode_tool(tool: &str, args: &serde_json::Value) -> Result<ToolCall, String>
         }
         Ok(symbols)
     };
+    let number_arg = |key: &str| -> Result<f64, String> {
+        args.get(key)
+            .and_then(|value| value.as_f64().or_else(|| value.as_str()?.parse().ok()))
+            .filter(|value| value.is_finite())
+            .ok_or_else(|| format!("tool `{tool}` requires a numeric arg `{key}`"))
+    };
 
     match tool {
         "read_current_context" => Ok(ToolCall::ReadCurrentContext),
@@ -244,6 +284,18 @@ fn decode_tool(tool: &str, args: &serde_json::Value) -> Result<ToolCall, String>
         }),
         "open_symbol" => Ok(ToolCall::OpenSymbol {
             symbol: string_arg("symbol")?,
+        }),
+        "open_portfolio" => Ok(ToolCall::OpenPortfolio),
+        "sync_portfolio" => Ok(ToolCall::SyncPortfolio),
+        "list_alerts" => Ok(ToolCall::ListAlerts),
+        "create_price_alert" => Ok(ToolCall::CreatePriceAlert {
+            symbol: string_arg("symbol")?.to_ascii_uppercase(),
+            direction: string_arg("direction")?.to_ascii_lowercase(),
+            threshold: number_arg("threshold")?,
+        }),
+        "open_screener" => Ok(ToolCall::OpenScreener),
+        "open_comparison" => Ok(ToolCall::OpenComparison {
+            symbols: symbols_arg()?,
         }),
         other => Err(format!("unknown tool `{other}`")),
     }
@@ -285,6 +337,18 @@ mod tests {
             }
             other => panic!("unexpected action: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_price_alert_tool() {
+        let raw = r#"{"tool":"create_price_alert","args":{"symbol":"aapl","direction":"above","threshold":250.5}}"#;
+        assert!(matches!(
+            parse_assistant_action(raw),
+            AssistantAction::ToolCall {
+                call: ToolCall::CreatePriceAlert { symbol, threshold, .. },
+                ..
+            } if symbol == "AAPL" && threshold == 250.5
+        ));
     }
 
     #[test]

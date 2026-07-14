@@ -7,7 +7,10 @@ use ratatui::{
 
 use crate::{
     app::{App, Page, PanelId, WatchlistEditMode, WindowKind},
-    features::{agent, dashboard, onboarding, search, settings, spotlight},
+    features::{
+        agent, alerts, calendar, compare, dashboard, onboarding, portfolio, screener, search,
+        settings, spotlight,
+    },
     i18n::Key,
     theme::current_theme,
 };
@@ -19,6 +22,11 @@ pub fn render(frame: &mut Frame, app: &App) {
         Page::Search => search::render(frame, app),
         Page::Details => search::render_details(frame, app),
         Page::Settings => settings::render(frame, app),
+        Page::Portfolio => portfolio::render(frame, app),
+        Page::Alerts => alerts::render(frame, app),
+        Page::Screener => screener::render(frame, app),
+        Page::Compare => compare::render(frame, app),
+        Page::Calendar => calendar::render_page(frame, app),
     }
 
     if app.agent.panel_open {
@@ -99,6 +107,9 @@ fn render_footer(frame: &mut Frame, app: &App) {
 }
 
 fn footer_text(app: &App) -> String {
+    if let Some((message, _)) = &app.notification {
+        return format!("● {message}");
+    }
     if app.spotlight.open {
         return app.t(Key::SpotlightFooter).to_string();
     }
@@ -129,6 +140,11 @@ fn footer_text(app: &App) -> String {
     match app.page {
         Page::Search => app.t(Key::SearchFooter).to_string(),
         Page::Settings => app.t(Key::SettingsFooter).to_string(),
+        Page::Portfolio => "r sync · ↑↓ select · Esc back · Ctrl+P commands".to_string(),
+        Page::Alerts => "n quick alert · t toggle · d delete · Esc back".to_string(),
+        Page::Screener => "←→ screen · ↑↓ select · Esc back".to_string(),
+        Page::Compare => "↑↓ select · d remove · Esc back".to_string(),
+        Page::Calendar => "f scope · ↑↓ select · Esc back".to_string(),
         _ if app.is_text_input_target(crate::app::InputTarget::Agent) => {
             app.t(Key::AgentFooter).to_string()
         }
@@ -161,3 +177,29 @@ fn footer_text(app: &App) -> String {
 pub mod fill;
 pub mod panel;
 pub mod util;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn new_pages_render_on_compact_and_wide_terminals() {
+        for (width, height) in [(60, 18), (120, 36)] {
+            for page in [
+                Page::Portfolio,
+                Page::Alerts,
+                Page::Screener,
+                Page::Compare,
+                Page::Calendar,
+            ] {
+                let mut app = App::new(AppConfig::default().unwrap());
+                app.page = page;
+                let backend = TestBackend::new(width, height);
+                let mut terminal = Terminal::new(backend).unwrap();
+                terminal.draw(|frame| render(frame, &app)).unwrap();
+            }
+        }
+    }
+}

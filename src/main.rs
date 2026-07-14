@@ -3,6 +3,7 @@ use std::{error::Error, io};
 
 mod app;
 mod backend;
+mod broker;
 mod config;
 mod db;
 mod enrich;
@@ -44,6 +45,9 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     let config = AppConfig::load()?;
+    if args.first().map(String::as_str) == Some("broker") {
+        return broker::handle_cli(config, &args[1..]);
+    }
     if args.first().map(String::as_str) == Some("sec-sync") {
         let synced = sec::sync::sync_all_verbose(&config.ticker_db_path, &config.sec)
             .map_err(io::Error::other)?;
@@ -131,15 +135,25 @@ fn run_app(
         app.poll_live_details();
         app.poll_backend_insight();
         app.poll_agent_response();
+        app.poll_portfolio();
+        app.poll_notification();
 
         terminal.draw(|frame| ui::render(frame, app))?;
 
-        if crossterm_event::poll(Duration::from_millis(100))? {
-            let event = crossterm_event::read()?;
-            event::handle_event(app, event);
+        if crossterm_event::poll(Duration::from_millis(33))? {
+            // Drain bursts of key/resize events so key repeat cannot build up
+            // seconds of stale navigation work in the terminal queue.
+            for _ in 0..64 {
+                event::handle_event(app, crossterm_event::read()?);
+                if app.should_quit || !crossterm_event::poll(Duration::ZERO)? {
+                    break;
+                }
+            }
         }
     }
 
+    // Workspace persistence is deliberately off the input hot path.
+    app.save_workspace();
     Ok(())
 }
 
