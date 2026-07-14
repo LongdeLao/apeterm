@@ -160,3 +160,4 @@ fn footer_text(app: &App) -> String {
 
 pub mod fill;
 pub mod panel;
+pub mod util;

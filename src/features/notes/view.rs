@@ -1,3 +1,4 @@
+use crate::ui::util::centered_rect_percent;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
@@ -374,7 +375,7 @@ fn render_suggestions(frame: &mut Frame, app: &App, inset: Rect, offset_row: u16
 fn render_delete_confirm(frame: &mut Frame, app: &App, area: Rect) {
     let theme = current_theme(app.theme_name);
     let background = theme.background.unwrap_or(Color::Black);
-    let modal = centered_rect(area, 50, 5);
+    let modal = centered_rect_percent(area, 50, 5);
     let lines = vec![
         Line::from(Span::styled(
             "Delete this note?",
@@ -457,14 +458,4 @@ fn truncate_with_ellipsis(value: &str, width: usize) -> String {
     }
     result.push('…');
     result
-}
-
-fn centered_rect(area: Rect, width_percent: u16, height: u16) -> Rect {
-    let width = area.width.saturating_mul(width_percent).saturating_div(100);
-    Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height: height.min(area.height),
-    }
 }

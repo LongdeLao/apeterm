@@ -1,3 +1,4 @@
+use crate::ui::util::{format_compact_number, pad_right};
 use chrono::{DateTime, Local};
 use ratatui::{
     Frame,
@@ -667,23 +668,6 @@ fn format_currency(value: f64) -> String {
 
 fn thirteenf_value_to_usd(value: i64) -> f64 {
     value as f64 * 1_000.0
-}
-
-fn format_compact_number(value: f64) -> String {
-    if value.abs() >= 1_000_000_000.0 {
-        format!("{:.1}B", value / 1_000_000_000.0)
-    } else if value.abs() >= 1_000_000.0 {
-        format!("{:.1}M", value / 1_000_000.0)
-    } else if value.abs() >= 1_000.0 {
-        format!("{:.1}K", value / 1_000.0)
-    } else {
-        format!("{value:.0}")
-    }
-}
-
-fn pad_right(value: &str, width: usize) -> String {
-    let used = value.chars().count();
-    format!("{value}{}", " ".repeat(width.saturating_sub(used)))
 }
 
 #[derive(Default)]

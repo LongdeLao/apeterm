@@ -1,3 +1,4 @@
+use crate::ui::util::{background_style, format_compact_number, pad_right};
 use chrono::{Datelike, Local, TimeZone};
 use ratatui::{
     Frame,
@@ -1513,13 +1514,6 @@ fn filter_span(label: &str, active: bool, theme: crate::theme::Theme) -> Span<'s
     }
 }
 
-fn background_style(theme: crate::theme::Theme) -> Style {
-    match theme.background {
-        Some(background) => Style::default().bg(background),
-        None => Style::default(),
-    }
-}
-
 fn push_detail_row(
     lines: &mut Vec<Line<'_>>,
     label: &str,
@@ -1879,11 +1873,6 @@ fn search_symbol_column_width(app: &App) -> u16 {
         .saturating_add(1) as u16
 }
 
-fn pad_right(value: &str, width: usize) -> String {
-    let used = UnicodeWidthStr::width(value);
-    format!("{value}{}", " ".repeat(width.saturating_sub(used)))
-}
-
 fn format_large_number(value: f64) -> String {
     if value.abs() >= 1_000_000_000_000.0 {
         format!("{:.2}T", value / 1_000_000_000_000.0)
@@ -1891,18 +1880,6 @@ fn format_large_number(value: f64) -> String {
         format!("{:.2}B", value / 1_000_000_000.0)
     } else if value.abs() >= 1_000_000.0 {
         format!("{:.2}M", value / 1_000_000.0)
-    } else {
-        format!("{value:.0}")
-    }
-}
-
-fn format_compact_number(value: f64) -> String {
-    if value.abs() >= 1_000_000_000.0 {
-        format!("{:.1}B", value / 1_000_000_000.0)
-    } else if value.abs() >= 1_000_000.0 {
-        format!("{:.1}M", value / 1_000_000.0)
-    } else if value.abs() >= 1_000.0 {
-        format!("{:.1}K", value / 1_000.0)
     } else {
         format!("{value:.0}")
     }

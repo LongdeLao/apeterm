@@ -1,3 +1,4 @@
+use crate::ui::util::{centered_rect, locale_label};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
@@ -9,7 +10,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     app::{App, InputTarget, SettingsItem},
-    i18n::{Key, Locale},
+    i18n::Key,
     preferences::{AgentStyle, Experience, ExplanationLevel, Language, PreferencePreset, Tone},
     theme::current_theme,
     ui,
@@ -317,27 +318,11 @@ fn render_reset_confirmation(frame: &mut Frame, app: &App) {
     }
 }
 
-fn locale_label(app: &App, locale: &Locale) -> String {
-    locale
-        .language_key()
-        .map(|key| app.t(key).to_string())
-        .unwrap_or_else(|| locale.code().to_string())
-}
-
 fn inset(area: Rect, horizontal: u16, vertical: u16) -> Rect {
     Rect {
         x: area.x.saturating_add(horizontal),
         y: area.y.saturating_add(vertical),
         width: area.width.saturating_sub(horizontal * 2),
         height: area.height.saturating_sub(vertical * 2),
-    }
-}
-
-fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width: width.min(area.width),
-        height: height.min(area.height),
     }
 }

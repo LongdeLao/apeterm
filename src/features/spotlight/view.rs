@@ -1,3 +1,4 @@
+use crate::ui::util::centered_rect_percent;
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -16,7 +17,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
     let visible_rows = app.spotlight.results.len().min(MAX_RESULTS).max(1);
     let height = (visible_rows as u16).saturating_add(4);
-    let area = centered_rect(frame.area(), 60, height);
+    let area = centered_rect_percent(frame.area(), 60, height);
 
     let modal_background = theme.background.unwrap_or(Color::Rgb(0, 0, 0));
 
@@ -106,14 +107,4 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect, modal_background: Co
         .collect();
 
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Left), area);
-}
-
-fn centered_rect(area: Rect, width_percent: u16, height: u16) -> Rect {
-    let width = (area.width.saturating_mul(width_percent) / 100).min(area.width);
-    Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height: height.min(area.height),
-    }
 }

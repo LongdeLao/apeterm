@@ -1,3 +1,4 @@
+use crate::ui::util::{centered_rect, locale_label};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -8,7 +9,7 @@ use ratatui::{
 
 use crate::{
     app::{App, OnboardingStep, ThemeName},
-    i18n::{Key, Locale},
+    i18n::Key,
     theme::current_theme,
     ui,
 };
@@ -129,13 +130,6 @@ fn render_options(frame: &mut Frame, app: &App, area: Rect, options: &[(String, 
     }
 }
 
-fn locale_label(app: &App, locale: &Locale) -> String {
-    locale
-        .language_key()
-        .map(|key| app.t(key).to_string())
-        .unwrap_or_else(|| locale.code().to_string())
-}
-
 fn welcome_chunks(area: Rect) -> std::rc::Rc<[Rect]> {
     let content_height = 7;
 
@@ -163,28 +157,4 @@ fn menu_chunks(area: Rect, option_count: u16) -> std::rc::Rc<[Rect]> {
             Constraint::Min(0),
         ])
         .split(area)
-}
-
-fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    let width = width.min(area.width);
-    let height = height.min(area.height);
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length((area.height.saturating_sub(height)) / 2),
-            Constraint::Length(height),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let horizontal = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length((area.width.saturating_sub(width)) / 2),
-            Constraint::Length(width),
-            Constraint::Min(0),
-        ])
-        .split(vertical[1]);
-
-    horizontal[1]
 }

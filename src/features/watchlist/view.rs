@@ -1,3 +1,4 @@
+use crate::ui::util::centered_rect;
 use std::time::Instant;
 
 use ratatui::{
@@ -493,14 +494,5 @@ fn render_watchlist_input(frame: &mut Frame, app: &App, area: Rect) {
             ),
             modal.y.saturating_add(1),
         ));
-    }
-}
-
-fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width: width.min(area.width),
-        height: height.min(area.height),
     }
 }

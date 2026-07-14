@@ -1,3 +1,4 @@
+use crate::ui::util::centered_rect_percent;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -260,7 +261,7 @@ fn render_gap(frame: &mut Frame, area: Rect) {
 fn render_detail(frame: &mut Frame, app: &App, area: Rect, item: &NewsItem) {
     let theme = current_theme(app.theme_name);
     let background = theme.background.unwrap_or(theme.surface);
-    let modal = centered_rect(area, 78, 20);
+    let modal = centered_rect_percent(area, 78, 20);
     let published = app.news_absolute_timestamp(item.published_at);
     let symbols = app
         .news_symbols_label(&item.symbols)
@@ -432,14 +433,4 @@ fn truncate_with_ellipsis(value: &str, width: usize) -> String {
     }
     result.push('…');
     result
-}
-
-fn centered_rect(area: Rect, width_percent: u16, height: u16) -> Rect {
-    let width = area.width.saturating_mul(width_percent).saturating_div(100);
-    Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height: height.min(area.height),
-    }
 }

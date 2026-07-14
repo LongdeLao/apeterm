@@ -1,3 +1,4 @@
+use crate::ui::util::background_style;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position, Rect},
@@ -48,13 +49,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     render_header(frame, app, &theme, chunks[0]);
     render_transcript(frame, app, &theme, chunks[1]);
     render_input(frame, app, &theme, chunks[2]);
-}
-
-fn background_style(theme: Theme) -> Style {
-    match theme.background {
-        Some(background) => Style::default().bg(background),
-        None => Style::default(),
-    }
 }
 
 fn render_header(frame: &mut Frame, app: &App, theme: &Theme, area: Rect) {
