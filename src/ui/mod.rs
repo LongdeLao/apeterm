@@ -50,6 +50,10 @@ pub fn render(frame: &mut Frame, app: &App) {
         spotlight::render(frame, app);
     }
 
+    if app.portfolio.login.is_some() {
+        portfolio::render_login_overlay(frame, app);
+    }
+
     render_footer(frame, app);
 }
 
@@ -184,8 +188,12 @@ pub mod util;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AppConfig;
-    use ratatui::{Terminal, backend::TestBackend};
+    use crate::{
+        app::InputTarget,
+        config::AppConfig,
+        features::portfolio::state::{TradeRepublicLogin, TradeRepublicLoginStep},
+    };
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
     #[test]
     fn new_pages_render_on_compact_and_wide_terminals() {
@@ -204,5 +212,41 @@ mod tests {
                 terminal.draw(|frame| render(frame, &app)).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn broker_login_overlay_renders_from_dashboard_panel() {
+        let mut app = App::new(AppConfig::default().unwrap());
+        app.page = Page::Dashboard;
+        app.dashboard.focused_panel = PanelId::News;
+        app.set_panel_content(PanelId::News, WindowKind::Portfolio);
+        app.portfolio.login = Some(TradeRepublicLogin {
+            step: TradeRepublicLoginStep::Phone,
+            phone: String::new(),
+            pin: String::new(),
+            process_id: None,
+            countdown: None,
+            input: "+491234".to_string(),
+        });
+        app.begin_text_input(InputTarget::BrokerLogin);
+
+        let backend = TestBackend::new(120, 36);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let view = buffer_view(terminal.backend().buffer());
+
+        assert!(view.contains("Trade Republic Login"));
+        assert!(view.contains("Phone: +491234"));
+    }
+
+    fn buffer_view(buffer: &Buffer) -> String {
+        let mut out = String::new();
+        for row in buffer.content().chunks(buffer.area.width as usize) {
+            for cell in row {
+                out.push_str(cell.symbol());
+            }
+            out.push('\n');
+        }
+        out
     }
 }

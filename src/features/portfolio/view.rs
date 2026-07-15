@@ -17,9 +17,6 @@ use crate::{
 
 pub fn render(frame: &mut Frame, app: &App) {
     render_area(frame, app, ui::content_area(frame.area(), app), None);
-    if app.portfolio.login.is_some() {
-        render_login_modal(frame, app);
-    }
 }
 
 pub fn render_panel(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId) {
@@ -28,22 +25,22 @@ pub fn render_panel(frame: &mut Frame, app: &App, area: Rect, panel_id: PanelId)
     }
 }
 
-fn render_login_modal(frame: &mut Frame, app: &App) {
+pub fn render_login_overlay(frame: &mut Frame, app: &App) {
     let theme = current_theme(app.theme_name);
     let background = theme.background.unwrap_or(Color::Black);
-    let area = centered_rect(ui::content_area(frame.area(), app), 66, 11);
+    let area = centered_rect(ui::content_area(frame.area(), app), 64, 9);
     let Some(login) = &app.portfolio.login else {
         return;
     };
     let (label, value) = match login.step {
         TradeRepublicLoginStep::Phone => ("Phone", login.input.clone()),
-        TradeRepublicLoginStep::Pin => ("PIN", "•".repeat(login.input.chars().count())),
+        TradeRepublicLoginStep::Pin => ("PIN", login.input.clone()),
         TradeRepublicLoginStep::Code => ("Code/TAN", login.input.clone()),
     };
     let mut helper = match login.step {
         TradeRepublicLoginStep::Phone => "Use international format, e.g. +4912345678.".to_string(),
         TradeRepublicLoginStep::Pin => {
-            "PIN is hidden while typing and only held in memory.".to_string()
+            "PIN is only held in memory for this login step.".to_string()
         }
         TradeRepublicLoginStep::Code => "Enter the code/TAN from Trade Republic.".to_string(),
     };
@@ -55,7 +52,7 @@ fn render_login_modal(frame: &mut Frame, app: &App) {
     let status = app.portfolio.status.as_deref().unwrap_or_default();
     let lines = vec![
         Line::from(Span::styled(
-            "Connect Trade Republic",
+            "Trade Republic Login",
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
@@ -81,23 +78,22 @@ fn render_login_modal(frame: &mut Frame, app: &App) {
         .style(Style::default().bg(background))
         .block(
             Block::default()
-                .title(" Broker Login ")
+                .title(" Trade Republic Login ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(border))
                 .style(Style::default().bg(background)),
         );
     frame.render_widget(Clear, area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(background)),
+        area,
+    );
     frame.render_widget(panel, area);
     if app.is_text_input_target(InputTarget::BrokerLogin) && !app.portfolio.login_busy {
-        let cursor_value = match login.step {
-            TradeRepublicLoginStep::Pin => "•".repeat(login.input.chars().count()),
-            _ => login.input.clone(),
-        };
         let label_width = UnicodeWidthStr::width(format!("{label}: ").as_str()) as u16;
         frame.set_cursor_position(Position::new(
-            area.x.saturating_add(
-                1 + label_width + UnicodeWidthStr::width(cursor_value.as_str()) as u16,
-            ),
+            area.x
+                .saturating_add(1 + label_width + UnicodeWidthStr::width(value.as_str()) as u16),
             area.y.saturating_add(5),
         ));
     }
