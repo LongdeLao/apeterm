@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -22,6 +26,7 @@ from pytr.api import BASE_DIR, CREDENTIALS_FILE, TradeRepublicApi, TradeRepublic
 
 
 pytr_utils.log_level = "critical"
+WEB_APP_VERSION = "15.101.0"
 
 
 def ensure_venv_path() -> None:
@@ -50,22 +55,153 @@ def write_credentials(phone: str, pin: str) -> None:
     CREDENTIALS_FILE.write_text(f"{phone}\n{pin}\n", encoding="utf-8")
 
 
+def normalize_phone(phone: str) -> str:
+    phone = "".join(phone.strip().split())
+    if phone.startswith("00"):
+        phone = f"+{phone[2:]}"
+    if phone.startswith("0"):
+        phone = f"+49{phone.lstrip('0')}"
+    if not phone.startswith("+") or not phone[1:].isdigit():
+        raise ValueError("Phone number must use international format, e.g. +4917612345678.")
+    return phone
+
+
+def trade_republic_error(response) -> RuntimeError:
+    try:
+        payload = response.json()
+        error = (payload.get("errors") or [{}])[0]
+        code = error.get("errorCode") or response.reason
+        message = error.get("errorMessage") or code
+        retry = (error.get("meta") or {}).get("nextAttemptInSeconds")
+        suffix = f" Retry in {retry}s." if retry else ""
+        detail = f"{message} ({code})" if message != code else code
+    except Exception:
+        body = response.text.strip()
+        detail = body[:240] if body else response.reason
+    suffix = suffix if "suffix" in locals() else ""
+    return RuntimeError(f"Trade Republic login failed: HTTP {response.status_code}: {detail}.{suffix}")
+
+
+def web_device_info(phone: str) -> str:
+    seed = hashlib.sha256(f"apeterm:{phone}:{platform.node()}".encode()).hexdigest()
+    payload = {
+        "stableDeviceId": seed,
+        "model": platform.machine() or "Desktop",
+        "browser": "Chrome",
+        "browserVersion": "146.0.0.0",
+        "os": platform.system() or "Desktop",
+        "osVersion": platform.release() or "",
+        "timezone": time.tzname[0] if time.tzname else "UTC",
+        "timezoneOffset": int(-time.timezone / 60),
+        "screen": "1920x1080x24",
+        "preferredLanguages": ["en-US", "en"],
+        "numberOfCores": os.cpu_count() or 4,
+        "deviceMemory": 8,
+    }
+    return base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
+
+
+def prepare_web_login_session(tr: TradeRepublicApi, phone: str) -> dict[str, str]:
+    if tr._waf_token == "awswaf":
+        tr._waf_token = tr._fetch_waf_token_awswaf()
+    elif tr._waf_token == "playwright":
+        tr._waf_token = tr._fetch_waf_token_playwright()
+    if tr._waf_token:
+        tr._set_waf_cookie(tr._waf_token)
+    headers = {
+        "X-TR-Device-Info": web_device_info(phone),
+        "X-TR-App-Version": WEB_APP_VERSION,
+    }
+    tr._websession.headers.update(headers)
+    return headers
+
+
+def post_v2_login(tr: TradeRepublicApi, phone: str, pin: str) -> dict:
+    headers = prepare_web_login_session(tr, phone)
+    response = tr._websession.post(
+        f"{tr._host}/api/v2/auth/web/login",
+        json={"phoneNumber": phone, "pin": pin},
+        headers=headers,
+    )
+    if not response.ok:
+        raise trade_republic_error(response)
+    return response.json()
+
+
+def get_v2_process(tr: TradeRepublicApi, process_id: str) -> dict:
+    response = tr._websession.get(f"{tr._host}/api/v2/auth/web/login/processes/{process_id}")
+    if not response.ok:
+        raise trade_republic_error(response)
+    return response.json()
+
+
+def wait_for_v2_process(tr: TradeRepublicApi, process_id: str, countdown: int) -> bool:
+    deadline = time.time() + max(15, min(countdown + 10, 180))
+    while time.time() < deadline:
+        process = get_v2_process(tr, process_id)
+        status = process.get("status")
+        if status in {"CONFIRMED", "COMPLETED"}:
+            tr.save_websession()
+            return True
+        if process.get("requiredAction") == "AUTHENTICATOR_VERIFICATION":
+            return False
+        if status not in {None, "PENDING"}:
+            raise RuntimeError(f"Trade Republic login was rejected ({status}).")
+        time.sleep(2)
+    raise RuntimeError("Trade Republic login confirmation timed out.")
+
+
+def complete_v2_authenticator(tr: TradeRepublicApi, process_id: str, code: str) -> None:
+    response = tr._websession.post(
+        f"{tr._host}/api/v2/auth/web/login/processes/{process_id}/authenticator-verification",
+        json={"code": code},
+    )
+    if not response.ok:
+        raise trade_republic_error(response)
+    if not wait_for_v2_process(tr, process_id, 120):
+        raise RuntimeError("Trade Republic still requires app confirmation after the code.")
+
+
 def login_start() -> int:
     payload = json.load(sys.stdin)
-    phone = payload["phone"].strip()
+    phone = normalize_phone(payload["phone"])
     pin = payload["pin"].strip()
     tr = TradeRepublicApi(phone_no=phone, pin=pin, save_cookies=True, waf_token="playwright")
     if tr.resume_websession():
         write_credentials(phone, pin)
         print(json.dumps({"status": "connected"}))
         return 0
+    try:
+        result = post_v2_login(tr, phone, pin)
+        process_id = result["processId"]
+        countdown = int(result.get("countdownInSeconds") or 120)
+        process = get_v2_process(tr, process_id)
+        if process.get("requiredAction") == "AUTHENTICATOR_VERIFICATION":
+            tr._websession.cookies.save(ignore_discard=True)
+            print(
+                json.dumps(
+                    {
+                        "status": "code_required",
+                        "process_id": f"v2:{process_id}",
+                        "countdown": countdown,
+                    }
+                )
+            )
+            return 0
+        if wait_for_v2_process(tr, process_id, countdown):
+            write_credentials(phone, pin)
+            print(json.dumps({"status": "connected"}))
+            return 0
+    except RuntimeError:
+        raise
+
     countdown = tr.initiate_weblogin()
     tr._websession.cookies.save(ignore_discard=True)
     print(
         json.dumps(
             {
                 "status": "code_required",
-                "process_id": tr._process_id,
+                "process_id": f"v1:{tr._process_id}",
                 "countdown": countdown,
             }
         )
@@ -75,14 +211,18 @@ def login_start() -> int:
 
 def login_complete() -> int:
     payload = json.load(sys.stdin)
-    phone = payload["phone"].strip()
+    phone = normalize_phone(payload["phone"])
     pin = payload["pin"].strip()
     process_id = payload["process_id"].strip()
     code = payload["code"].strip()
     tr = TradeRepublicApi(phone_no=phone, pin=pin, save_cookies=True, waf_token="playwright")
     tr._websession.cookies.load(ignore_discard=True)
-    tr._process_id = process_id
-    tr.complete_weblogin(code)
+    prepare_web_login_session(tr, phone)
+    if process_id.startswith("v2:"):
+        complete_v2_authenticator(tr, process_id.removeprefix("v2:"), code)
+    else:
+        tr._process_id = process_id.removeprefix("v1:")
+        tr.complete_weblogin(code)
     write_credentials(phone, pin)
     print(json.dumps({"status": "connected"}))
     return 0

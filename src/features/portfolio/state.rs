@@ -198,7 +198,8 @@ impl App {
         self.portfolio.login_receiver = Some(receiver);
         self.portfolio.login_busy = true;
         self.clear_text_input_mode();
-        self.portfolio.status = Some("Starting Trade Republic login...".to_string());
+        self.portfolio.status =
+            Some("Starting Trade Republic login. Confirm in the app if prompted...".to_string());
         thread::spawn(move || {
             let result = crate::broker::trade_republic::login_start(&phone, &pin)
                 .map(|result| match result {
@@ -311,7 +312,8 @@ impl App {
                     login.step = TradeRepublicLoginStep::Code;
                     login.input.clear();
                 }
-                self.portfolio.status = Some("Enter the code/TAN from Trade Republic.".to_string());
+                self.portfolio.status =
+                    Some("Enter the Trade Republic code/TAN or authenticator code.".to_string());
                 self.begin_text_input(InputTarget::BrokerLogin);
             }
             Err(error) => {
